@@ -44,9 +44,18 @@ def bitstring_to_product_state_data(bitstring_data):
     return fMPS().from_product_state(bitstring_data).data
 
 
-def bitstring_data_to_QTN(data):
+def bitstring_data_to_QTN(data, n_hairysites, n_sites, truncated=False):
     # Doesn't work for truncated_data
     prod_state_data = bitstring_to_product_state_data(data)
+    if truncated:
+        prod_state_data = [
+            [
+                site[:1] if i < (n_sites - n_hairysites) else site
+                for i, site in enumerate(l)
+            ]
+            for l in prod_state_data
+        ]
+
     q_product_states = []
     for prod_state in prod_state_data:
         qtn_data = []

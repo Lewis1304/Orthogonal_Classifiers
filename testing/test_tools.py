@@ -39,19 +39,23 @@ n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
 n_pixels = len(x_train[0])
 
 hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, truncated=False
+    possible_labels, n_hairysites, n_sites
 )
-hairy_bitstrings_data_truncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, truncated=True
-)
+
 # Only do 2 paddings  (for speed)
 hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites
 )[:2]
 
-quimb_hairy_bitstrings = bitstring_data_to_QTN(hairy_bitstrings_data_untruncated_data)
+quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
+)
+truncated_quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
+)
 quimb_padded_hairy_bitstrings = [
-    bitstring_data_to_QTN(padding) for padding in hairy_bitstrings_data_padded_data
+    bitstring_data_to_QTN(padding, n_hairysites, n_sites)
+    for padding in hairy_bitstrings_data_padded_data
 ]
 
 fmps_images = [image_to_mps(image, D_total) for image in x_train]
@@ -161,6 +165,44 @@ def test_bitstring_data_to_QTN():
             else:
                 assert np.isclose((a[-1] @ b[-1]).norm(), 0)
 
+    # Check if label encoding is correct.
+    # Each hairy site has 2 qubits i.e. dim(s) == 2**2.
+    # Basis vectors for s.shape=4 site is:
+    # [1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1] with
+    # |00>, |01>, |10>, |11> respectively.
+    # So label "3" = "0011" should have [1,0,0,0] and [0,0,0,1] for the hairy sites
+    basis_vectors = {
+        "00": [1, 0, 0, 0],
+        "01": [0, 1, 0, 0],
+        "10": [0, 0, 1, 0],
+        "11": [0, 0, 0, 1],
+    }
+    bitstrings = create_bitstrings(possible_labels, n_hairysites)
+
+    # untruncated
+    for label in possible_labels:
+        for i, site in enumerate(
+            quimb_hairy_bitstrings[label].tensors[(n_sites - n_hairysites) :]
+        ):
+            site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
+            assert np.array_equal(site.data.squeeze(), basis_vectors[site_qubits_state])
+
+    # truncated
+    for label in possible_labels:
+        for i, site in enumerate(
+            truncated_quimb_hairy_bitstrings[label].tensors[(n_sites - n_hairysites) :]
+        ):
+            site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
+            assert np.array_equal(site.data.squeeze(), basis_vectors[site_qubits_state])
+
+    # Test truncated sites are correct
+    # This checks shape and data
+    # Test that projection is not null. i.e. equal to 0
+    for label in possible_labels:
+        for i, site in enumerate(truncated_quimb_hairy_bitstrings[label]):
+            if i < (n_sites - n_hairysites):
+                assert site.data == np.array([1])
+
 
 def test_image_to_mps():
 
@@ -212,7 +254,9 @@ def test_fMPS_to_QTN():
             assert np.array_equal(fsite.squeeze(), qsite.data.squeeze())
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_data_to_QTN():
+
     class_encoded_mpos = [
         class_encode_mps_to_mpo(mps_train[0], label, quimb_hairy_bitstrings, n_sites)
         for label in possible_labels
@@ -226,6 +270,27 @@ def test_data_to_QTN():
             class_encoded_mpos[label], quimb_encoded_mpos[label].tensors
         ):
             assert np.array_equal(data, q_data.data)
+
+    # Check truncated
+    truncated_class_encoded_mpos = [
+        class_encode_mps_to_mpo(
+            mps_train[0], label, truncated_quimb_hairy_bitstrings, n_sites
+        )
+        for label in possible_labels
+    ]
+    truncated_quimb_encoded_mpos = [
+        data_to_QTN(mpo) for mpo in truncated_class_encoded_mpos
+    ]
+
+    # Check converting to quimb tensor does not alter the data.
+    # Check for all labels.
+    for label in possible_labels:
+        for data, q_data in zip(
+            truncated_class_encoded_mpos[label],
+            truncated_quimb_encoded_mpos[label].tensors,
+        ):
+            assert np.array_equal(data, q_data.data)
+
     """
     mps_train = mps_encoding(x_train[:100], D_total)
     hairy_bitstring_data = create_hairy_bitstrings_data(possible_labels, n_hairysites, n_sites, truncated=False)
@@ -360,4 +425,4 @@ def test_QTN_to_fMPO_and_back():
 
 
 if __name__ == "__main__":
-    test_batch_adding_mpos()
+    test_bitstring_data_to_QTN()

@@ -39,19 +39,24 @@ n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
 n_pixels = len(x_train[0])
 
 hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, truncated=False
+    possible_labels, n_hairysites, n_sites
 )
-hairy_bitstrings_data_truncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, truncated=True
-)
+
 # Only do 2 paddings  (for speed)
 hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites
 )[:2]
 
-quimb_hairy_bitstrings = bitstring_data_to_QTN(hairy_bitstrings_data_untruncated_data)
+quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
+)
+truncated_quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
+)
+
 quimb_padded_hairy_bitstrings = [
-    bitstring_data_to_QTN(padding) for padding in hairy_bitstrings_data_padded_data
+    bitstring_data_to_QTN(padding, n_hairysites, n_sites)
+    for padding in hairy_bitstrings_data_padded_data
 ]
 
 fmps_images = [image_to_mps(image, D_total) for image in x_train]
@@ -88,50 +93,6 @@ def test_create_hairy_bitstrings_data():
             : (n_sites - n_hairysites)
         ]:
             assert np.array_equal(site, [1, 0, 0, 0])
-
-    # Test truncated shape is correct
-    for label in possible_labels:
-        for i, site in enumerate(hairy_bitstrings_data_truncated_data[label]):
-            if i < (n_sites - n_hairysites):
-                assert site.shape == (1,)
-            else:
-                assert site.shape == (4,)
-
-    # Test that projection is not null. i.e. equal to 0
-    for label in possible_labels:
-        for i, site in enumerate(hairy_bitstrings_data_truncated_data[label]):
-            if i < (n_sites - n_hairysites):
-                assert site == np.array([1])
-
-    # Check if label encoding is correct.
-    # Each hairy site has 2 qubits i.e. dim(s) == 2**2.
-    # Basis vectors for s.shape=4 site is:
-    # [1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1] with
-    # |00>, |01>, |10>, |11> respectively.
-    # So label "3" = "0011" should have [1,0,0,0] and [0,0,0,1] for the hairy sites
-    basis_vectors = {
-        "00": [1, 0, 0, 0],
-        "01": [0, 1, 0, 0],
-        "10": [0, 0, 1, 0],
-        "11": [0, 0, 0, 1],
-    }
-    bitstrings = create_bitstrings(possible_labels, n_hairysites)
-
-    # untruncated
-    for label in possible_labels:
-        for i, site in enumerate(
-            hairy_bitstrings_data_untruncated_data[label][(n_sites - n_hairysites) :]
-        ):
-            site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
-            assert np.array_equal(site, basis_vectors[site_qubits_state])
-
-    # truncated
-    for label in possible_labels:
-        for i, site in enumerate(
-            hairy_bitstrings_data_truncated_data[label][(n_sites - n_hairysites) :]
-        ):
-            site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
-            assert np.array_equal(site, basis_vectors[site_qubits_state])
 
 
 def test_create_padded_hairy_bitstrings_data():
@@ -262,6 +223,7 @@ def test_padded_bitstring_to_product_state_data():
                 assert np.array_equal(a, b.squeeze())
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_class_encode_mps_to_mpo():
     # Encode a single image with all different classes.
     mpo_train = [
@@ -285,6 +247,7 @@ def test_class_encode_mps_to_mpo():
                 assert np.array_equal(proj.squeeze(), mps_site.data.squeeze())
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_create_mpo_classifier():
     mpo_train = mpo_encoding(mps_train, y_train[:100], quimb_hairy_bitstrings)
 
@@ -405,6 +368,7 @@ def test_batch_adding_mpos():
         assert j0 <= max_D
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_green_loss():
 
     # Check loss is -1.0 between same image as mps image and mpo classifier
@@ -418,6 +382,7 @@ def test_green_loss():
     assert np.round(loss, 3) == -1.0
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_padded_green_loss():
 
     # Check loss is -1.0 between same image as mps image and mpo classifier
@@ -445,6 +410,7 @@ def test_padded_green_loss():
     # When image is encoded as all possible paddings.
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_stoundenmire_loss():
 
     # Check loss is 0 between same image as mps image and mpo classifier
@@ -509,6 +475,7 @@ def test_padded_classifier_predictions():
     ).all()
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_evaluate_classifier_accuracy():
 
     # Test whether an initial classifier displays correct results
@@ -538,6 +505,7 @@ def test_evaluate_classifier_accuracy():
     # Result is 100% accuracy with test images of same class. Requires padded encoding on images.
 
 
+# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_evaluate_classifier_top_k_accuracy():
 
     # Test whether an initial classifier displays correct results

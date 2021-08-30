@@ -24,9 +24,11 @@ def initialise_experiment(
 
     # Create hairy bitstrings
     hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairysites, n_sites, truncated=False
+        possible_labels, n_hairysites, n_sites
     )
-    q_hairy_bitstrings = bitstring_data_to_QTN(hairy_bitstrings_data)
+    q_hairy_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, n_hairysites, n_sites, truncated=True
+    )
     # q_hairy_bitstrings[0].draw(show_inds = False, show_tags = False)
     # MPS encode data
     mps_train = mps_encoding(x_train, D_total)
@@ -243,22 +245,20 @@ def all_classes_experiment(
     optmzr = TNOptimizer(
         mpo_classifier,  # our initial input, the tensors of which to optimize
         loss_fn=lambda c: loss_func(c, mps_train, q_hairy_bitstrings, y_train),
-        norm_fn=normalize_tn,
+        norm_fn=orthogonalise_and_normalize,
         autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
         optimizer="nadam",  # supplied to scipy.minimize
     )
-
     for i in range(500):
         classifier_opt = optmzr.optimize(1)
-
         predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
-
         predicitions_store.append(predictions)
         accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_train, 3))
         # variances.append(evaluate_prediction_variance(predictions))
+
         losses.append(optmzr.loss)
 
-        plot_results((accuracies, losses, predictions), title)
+        plot_results((accuracies, losses, predicitions_store), title)
 
     return accuracies, losses
 
@@ -339,7 +339,7 @@ def plot_results(results, title):
 
 if __name__ == "__main__":
 
-    num_samples = 100
+    num_samples = 1000
     D_total = 10
 
     data, classifier, bitstrings = initialise_experiment(
@@ -351,6 +351,8 @@ if __name__ == "__main__":
     )
     mps_images, labels = data
 
+    classifier = compress_QTN(classifier, D=None, orthogonalise=True)
+
     all_classes_experiment(
         classifier,
         mps_images,
@@ -358,5 +360,5 @@ if __name__ == "__main__":
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "testing",
+        "stoudenmire_orthogonalise",
     )

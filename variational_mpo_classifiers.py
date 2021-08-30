@@ -27,9 +27,7 @@ Encode Bitstrings
 """
 
 
-def create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, truncated=False
-):
+def create_hairy_bitstrings_data(possible_labels, n_hairysites, n_sites):
 
     bitstrings = create_bitstrings(possible_labels, n_hairysites)
     hairy_sites = np.array(
@@ -61,16 +59,7 @@ def create_hairy_bitstrings_data(
     )
     # .shape = #classes, #sites, dim(s)
     untruncated = np.append(other_sites, hairy_sites, axis=1)
-    if not truncated:
-        return untruncated
-    truncated = [
-        [
-            site[:1] if j < (n_sites - n_hairysites) else site
-            for j, site in enumerate(label)
-        ]
-        for label in untruncated
-    ]
-    return truncated
+    return untruncated
 
 
 def create_padded_hairy_bitstrings_data(possible_labels, n_hairysites, n_sites):
@@ -377,18 +366,9 @@ def normalize_tn(tn):
     return tn / (tn.H @ tn) ** 0.5
 
 
-def optimiser(classifier, mps_train, q_hairy_bitstrings, y_train):
-    optmzr = TNOptimizer(
-        classifier,  # our initial input, the tensors of which to optimize
-        # loss_fn=lambda c: negative_loss(c, mps_train, q_hairy_bitstrings, y_train),
-        loss_fn=lambda c: single_loss(c, mps_train, q_hairy_bitstrings, y_train),
-        norm_fn=normalize_tn,
-        autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
-        optimizer="L-BFGS-B",  # supplied to scipy.minimize
-    )
-    new_classifier = optmzr.optimize(1)
-    L = optmzr.loss
-    return L, new_classifier
+def orthogonalise_and_normalize(tn):
+    tn = compress_QTN(tn, D=None, orthogonalise=True)
+    return tn / (tn.H @ tn) ** 0.5
 
 
 """
