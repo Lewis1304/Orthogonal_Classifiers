@@ -424,5 +424,16 @@ def test_QTN_to_fMPO_and_back():
         assert np.array_equal(original.data, new.data)
 
 
+def test_save_and_load_qtn_classifier():
+    save_qtn_classifier(mpo_classifier, "pytest")
+    loaded_classifier = load_qtn_classifier("pytest")
+    assert np.array(
+        [
+            np.array_equal(x.data, y.data)
+            for x, y in zip(mpo_classifier.tensors, loaded_classifier.tensors)
+        ]
+    ).all()
+
+
 if __name__ == "__main__":
-    test_bitstring_data_to_QTN()
+    test_save_and_load_qtn_classifier()

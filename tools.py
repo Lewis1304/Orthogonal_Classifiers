@@ -171,5 +171,28 @@ def fMPO_to_QTN(fmpo):
     return data_to_QTN(fmpo_data)
 
 
+"""
+Classifier tools
+"""
+
+
+def save_qtn_classifier(QTN, dir):
+    if not os.path.exists("Classifiers/" + dir):
+        os.makedirs("Classifiers/" + dir)
+    for i, site in enumerate(QTN.tensors):
+        np.save("Classifiers/" + dir + f"/site_{i}", site.data)
+
+
+def load_qtn_classifier(dir):
+    files = os.listdir("Classifiers/" + dir)
+    num_files = len(files)
+
+    data = [
+        np.load("Classifiers/" + dir + f"/site_{i}.npy", allow_pickle=True)
+        for i in range(num_files)
+    ]
+    return data_to_QTN(data)
+
+
 if __name__ == "__main__":
     pass

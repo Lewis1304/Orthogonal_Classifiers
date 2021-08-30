@@ -1,4 +1,5 @@
 from variational_mpo_classifiers import *
+import os
 
 """
 Experiments
@@ -42,7 +43,7 @@ def initialise_experiment(
     if initialise_classifier:
         mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
     else:
-        mpo_classifier = create_mpo_classifier(mpo_train, y_train)
+        mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
 
     if padded:
         hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
@@ -234,7 +235,7 @@ def all_classes_experiment(
     loss_func,
     title,
 ):
-
+    classifier = compress_QTN(mpo_classifier, D=None, orthogonalise=True)
     initial_predictions = predict_func(mpo_classifier, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
@@ -243,14 +244,17 @@ def all_classes_experiment(
     losses = [loss_func(mpo_classifier, mps_train, q_hairy_bitstrings, y_train)]
 
     optmzr = TNOptimizer(
-        mpo_classifier,  # our initial input, the tensors of which to optimize
+        classifier,  # our initial input, the tensors of which to optimize
         loss_fn=lambda c: loss_func(c, mps_train, q_hairy_bitstrings, y_train),
-        norm_fn=orthogonalise_and_normalize,
+        norm_fn=normalize_tn,
         autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
         optimizer="nadam",  # supplied to scipy.minimize
     )
+
     for i in range(500):
         classifier_opt = optmzr.optimize(1)
+        classifier_opt = compress_QTN(classifier_opt, D=None, orthogonalise=True)
+
         predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
         predicitions_store.append(predictions)
         accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_train, 3))
@@ -259,6 +263,7 @@ def all_classes_experiment(
         losses.append(optmzr.loss)
 
         plot_results((accuracies, losses, predicitions_store), title)
+        save_qtn_classifier(classifier, title)
 
     return accuracies, losses
 
@@ -351,8 +356,6 @@ if __name__ == "__main__":
     )
     mps_images, labels = data
 
-    classifier = compress_QTN(classifier, D=None, orthogonalise=True)
-
     all_classes_experiment(
         classifier,
         mps_images,
@@ -360,5 +363,5 @@ if __name__ == "__main__":
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "stoudenmire_orthogonalise",
+        "stoudenmire_orthogonalise_inbetween",
     )
