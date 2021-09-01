@@ -43,7 +43,7 @@ def initialise_experiment(
     if initialise_classifier:
         mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
     else:
-        mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
+        mpo_classifier = create_mpo_classifier(mpo_train, seed = 420)
 
     if padded:
         hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
@@ -225,8 +225,7 @@ def two_classes_experiment(mpo_classifier, mps_train, q_hairy_bitstrings, y_trai
     # fig.tight_layout()  # otherwise the right y-label is slightly clipped
     plt.show()
 
-
-def all_classes_experiment(
+def all_classes_experiment_ortho_inbetween(
     mpo_classifier,
     mps_train,
     q_hairy_bitstrings,
@@ -235,23 +234,28 @@ def all_classes_experiment(
     loss_func,
     title,
 ):
-    classifier = compress_QTN(mpo_classifier, D=None, orthogonalise=True)
-    initial_predictions = predict_func(mpo_classifier, mps_train, q_hairy_bitstrings)
+    print('Experiment: Orthogonalise inbetween.')
+    classifier_opt = mpo_classifier
+    #classifier_opt = compress_QTN(mpo_classifier, D=None, orthogonalise=False)
+    initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
     accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 3)]
     # variances = [evaluate_prediction_variance(initial_predictions)]
-    losses = [loss_func(mpo_classifier, mps_train, q_hairy_bitstrings, y_train)]
+    losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
 
-    optmzr = TNOptimizer(
-        classifier,  # our initial input, the tensors of which to optimize
-        loss_fn=lambda c: loss_func(c, mps_train, q_hairy_bitstrings, y_train),
-        norm_fn=normalize_tn,
-        autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
-        optimizer="nadam",  # supplied to scipy.minimize
-    )
+    def optimiser(classifier):
+        optmzr = TNOptimizer(
+            classifier,  # our initial input, the tensors of which to optimize
+            loss_fn=lambda c: loss_func(c, mps_train, q_hairy_bitstrings, y_train),
+            norm_fn=normalize_tn,
+            autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
+            optimizer="nadam",  # supplied to scipy.minimize
+        )
+        return optmzr
 
-    for i in range(500):
+    for i in range(100):
+        optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
         classifier_opt = compress_QTN(classifier_opt, D=None, orthogonalise=True)
 
@@ -263,10 +267,53 @@ def all_classes_experiment(
         losses.append(optmzr.loss)
 
         plot_results((accuracies, losses, predicitions_store), title)
-        save_qtn_classifier(classifier, title)
+        save_qtn_classifier(classifier_opt, title)
 
     return accuracies, losses
 
+def all_classes_experiment_no_ortho(
+    mpo_classifier,
+    mps_train,
+    q_hairy_bitstrings,
+    y_train,
+    predict_func,
+    loss_func,
+    title,
+):
+    print('Experiment: No Orthogonalisation.')
+    classifier_opt = mpo_classifier
+    initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
+
+    predicitions_store = [initial_predictions]
+    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 3)]
+    # variances = [evaluate_prediction_variance(initial_predictions)]
+    losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
+
+    def optimiser(classifier):
+        optmzr = TNOptimizer(
+            classifier,  # our initial input, the tensors of which to optimize
+            loss_fn=lambda c: loss_func(c, mps_train, q_hairy_bitstrings, y_train),
+            norm_fn=normalize_tn,
+            autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
+            optimizer="nadam",  # supplied to scipy.minimize
+        )
+        return optmzr
+
+    for i in range(500):
+        optmzr = optimiser(classifier_opt)
+        classifier_opt = optmzr.optimize(1)
+
+        predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
+        predicitions_store.append(predictions)
+        accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_train, 3))
+        # variances.append(evaluate_prediction_variance(predictions))
+
+        losses.append(optmzr.loss)
+
+        plot_results((accuracies, losses, predicitions_store), title)
+        save_qtn_classifier(classifier_opt, title)
+
+    return accuracies, losses
 
 def sequential_mpo_classifier_experiment():
     n_samples = 1000
@@ -344,7 +391,7 @@ def plot_results(results, title):
 
 if __name__ == "__main__":
 
-    num_samples = 1000
+    num_samples = 500
     D_total = 10
 
     data, classifier, bitstrings = initialise_experiment(
@@ -356,12 +403,12 @@ if __name__ == "__main__":
     )
     mps_images, labels = data
 
-    all_classes_experiment(
+    all_classes_experiment_ortho_inbetween(
         classifier,
         mps_images,
         bitstrings,
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "stoudenmire_orthogonalise_inbetween",
+        "random_initialise_stoudenmire_ortho_inbetween",
     )
