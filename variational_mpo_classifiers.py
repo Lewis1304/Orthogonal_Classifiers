@@ -27,17 +27,21 @@ Encode Bitstrings
 """
 
 
-def create_hairy_bitstrings_data(possible_labels, n_hairysites, n_sites, one_site = False):
+def create_hairy_bitstrings_data(
+    possible_labels, n_hairysites, n_sites, one_site=False
+):
 
     bitstrings = create_bitstrings(possible_labels, n_hairysites)
 
     if one_site:
         num_qubits = int(np.log2(len(possible_labels))) + 1
-        hairy_sites = np.expand_dims([i for i in np.eye(2**num_qubits)][:len(possible_labels)],1)
+        hairy_sites = np.expand_dims(
+            [i for i in np.eye(2 ** num_qubits)][: len(possible_labels)], 1
+        )
 
         other_sites = np.array(
             [
-                [np.eye(2**num_qubits)[0] for pixel in range(n_sites - 1)]
+                [np.eye(2 ** num_qubits)[0] for pixel in range(n_sites - 1)]
                 for _ in possible_labels
             ]
         )
@@ -64,7 +68,6 @@ def create_hairy_bitstrings_data(possible_labels, n_hairysites, n_sites, one_sit
                 for bitstring in bitstrings
             ]
         )
-
 
         other_sites = np.array(
             [
@@ -207,7 +210,9 @@ def compress_QTN(projected_q_mpo, D, orthogonalise):
 
     if projected_q_mpo.tensors[-1].shape[1] > 4:
         return fMPO_to_QTN(
-            QTN_to_fMPO(projected_q_mpo).compress_one_site(D=D, orthogonalise=orthogonalise)
+            QTN_to_fMPO(projected_q_mpo).compress_one_site(
+                D=D, orthogonalise=orthogonalise
+            )
         )
     return fMPO_to_QTN(
         QTN_to_fMPO(projected_q_mpo).compress(D=D, orthogonalise=orthogonalise)

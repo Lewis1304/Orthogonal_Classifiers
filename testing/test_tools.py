@@ -42,7 +42,7 @@ hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites
 )
 one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, one_site = True
+    possible_labels, n_hairysites, n_sites, one_site=True
 )
 
 # Only do 2 paddings  (for speed)
@@ -128,10 +128,11 @@ def test_bitstring_data_to_QTN():
         ):
             assert np.array_equal(a, b.data.squeeze())
 
-    #Check for one-site
+    # Check for one-site
     for label in possible_labels:
         for a, b in zip(
-            one_site_bitstrings_data_untruncated_data[label], one_site_quimb_hairy_bitstrings[label]
+            one_site_bitstrings_data_untruncated_data[label],
+            one_site_quimb_hairy_bitstrings[label],
         ):
             assert np.array_equal(a, b.data.squeeze())
 
@@ -213,12 +214,10 @@ def test_bitstring_data_to_QTN():
             site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
             assert np.array_equal(site.data.squeeze(), basis_vectors[site_qubits_state])
 
-    #one-site
+    # one-site
     for i, label in enumerate(possible_labels):
         site = one_site_quimb_hairy_bitstrings[label].tensors[-1]
         assert np.array_equal(site.data.squeeze(), np.eye(16)[i])
-
-
 
     # Test truncated sites are correct
     # This checks shape and data
@@ -228,7 +227,7 @@ def test_bitstring_data_to_QTN():
             if i < (n_sites - n_hairysites):
                 assert site.data == np.array([1])
 
-    #Check for one-site
+    # Check for one-site
     for label in possible_labels:
         for i, site in enumerate(truncated_one_site_quimb_hairy_bitstrings[label]):
             if i < (n_sites - 1):

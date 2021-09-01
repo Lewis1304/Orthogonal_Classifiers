@@ -7,7 +7,12 @@ Experiments
 
 
 def initialise_experiment(
-    n_samples, D_total, padded=False, truncated = False, one_site = False, initialise_classifier=False
+    n_samples,
+    D_total,
+    padded=False,
+    truncated=False,
+    one_site=False,
+    initialise_classifier=False,
 ):
     """
     param: n_samples: Number of data samples (total)
@@ -30,7 +35,7 @@ def initialise_experiment(
     q_hairy_bitstrings = bitstring_data_to_QTN(
         hairy_bitstrings_data, n_hairysites, n_sites, truncated=truncated
     )
-    #q_hairy_bitstrings[0].draw(show_inds = False, show_tags = False)
+    # q_hairy_bitstrings[0].draw(show_inds = False, show_tags = False)
 
     # MPS encode data
     mps_train = mps_encoding(x_train, D_total)
@@ -38,13 +43,13 @@ def initialise_experiment(
     # MPO encode data (already encoded as mps)
     # Has shape: # classes, mpo.shape
     mpo_train = mpo_encoding(mps_train, y_train, q_hairy_bitstrings)
-    #mpo_train[0].draw(show_inds = False, show_tags = False)
+    # mpo_train[0].draw(show_inds = False, show_tags = False)
 
     # Initial Classifier
     if initialise_classifier:
         mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
     else:
-        mpo_classifier = create_mpo_classifier(mpo_train, seed = 420)
+        mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
 
     if padded:
         hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
@@ -226,6 +231,7 @@ def two_classes_experiment(mpo_classifier, mps_train, q_hairy_bitstrings, y_trai
     # fig.tight_layout()  # otherwise the right y-label is slightly clipped
     plt.show()
 
+
 def all_classes_experiment(
     mpo_classifier,
     mps_train,
@@ -234,8 +240,9 @@ def all_classes_experiment(
     predict_func,
     loss_func,
     title,
-    ortho_inbetween = False
+    ortho_inbetween=False,
 ):
+    print(title)
     classifier_opt = mpo_classifier
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
@@ -357,8 +364,8 @@ if __name__ == "__main__":
         num_samples,
         D_total,
         padded=False,
-        truncated = True,
-        one_site = True,
+        truncated=True,
+        one_site=True,
         initialise_classifier=False,
     )
     mps_images, labels = data
@@ -370,5 +377,5 @@ if __name__ == "__main__":
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "random_initialise_stoudenmire_not_truncated_seed_420",
+        "one_site_stoudenmire_not_truncated_seed_420",
     )

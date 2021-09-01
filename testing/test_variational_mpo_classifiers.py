@@ -43,7 +43,7 @@ hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
 )
 
 one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, one_site = True
+    possible_labels, n_hairysites, n_sites, one_site=True
 )
 
 # Only do 2 paddings  (for speed)
@@ -92,7 +92,7 @@ def test_create_hairy_bitstrings_data():
         dim_s,
     )
 
-    #Test one_site
+    # Test one_site
     dim_s = 16
     assert one_site_bitstrings_data_untruncated_data.shape == (
         len(possible_labels),
@@ -108,11 +108,9 @@ def test_create_hairy_bitstrings_data():
         ]:
             assert np.array_equal(site, [1, 0, 0, 0])
 
-    #Test one_site
+    # Test one_site
     for label in possible_labels:
-        for site in one_site_bitstrings_data_untruncated_data[label][
-            : (n_sites - 1)
-        ]:
+        for site in one_site_bitstrings_data_untruncated_data[label][: (n_sites - 1)]:
             assert np.array_equal(site, np.eye(16)[0])
 
 
@@ -338,13 +336,16 @@ def test_compress():
     # TODO: Orthogonalisation test
 
 
-
 def test_compress_one_site():
 
-    one_site_mpo_train = mpo_encoding(mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings)
+    one_site_mpo_train = mpo_encoding(
+        mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
+    )
     one_site_mpo_classifier = create_mpo_classifier(one_site_mpo_train, seed=420)
 
-    one_site_compressed_mpo = compress_QTN(one_site_mpo_classifier, D = None, orthogonalise = False)
+    one_site_compressed_mpo = compress_QTN(
+        one_site_mpo_classifier, D=None, orthogonalise=False
+    )
 
     # Check norm is still 1
     assert np.isclose((one_site_compressed_mpo.H @ one_site_compressed_mpo), 1)
@@ -353,8 +354,10 @@ def test_compress_one_site():
     # and compressed mpo with D=None is 1.
     assert np.isclose((one_site_mpo_classifier.H @ one_site_compressed_mpo).norm(), 1)
 
-    orthogonal_one_site_mpo = compress_QTN(one_site_mpo_classifier, D = None, orthogonalise = True)
-    #Check Canonical form and orthogonal
+    orthogonal_one_site_mpo = compress_QTN(
+        one_site_mpo_classifier, D=None, orthogonalise=True
+    )
+    # Check Canonical form and orthogonal
     for k, site in enumerate(orthogonal_one_site_mpo.tensors):
         d, s, i, j = site.data.shape
         U = site.data.transpose(0, 2, 1, 3).reshape(d * i, s * j)
@@ -362,7 +365,7 @@ def test_compress_one_site():
         if k < one_site_compressed_mpo.num_tensors - 1:
             assert np.isclose(Uh @ U, np.eye(s * j)).all()
         else:
-            assert np.isclose(U @ Uh, np.eye(d*i)).all()
+            assert np.isclose(U @ Uh, np.eye(d * i)).all()
 
 
 def test_batch_adding_mpos():

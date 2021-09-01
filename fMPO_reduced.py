@@ -77,13 +77,13 @@ class fMPO:
         :param D: bond dimension to truncate to during left & right sweep
         """
 
-        #Check that right most site is hairy, and no others are.
-        #Since procedure only works for truncated mpo
+        # Check that right most site is hairy, and no others are.
+        # Since procedure only works for truncated mpo
         for i, site in enumerate(self):
             if i < self.L - 2:
-                assert(site.shape[1] == 1)
+                assert site.shape[1] == 1
             else:
-                assert(site.shape[1] == 4)
+                assert site.shape[1] == 4
 
         if D is not None:
             self.D = min(D, self.D)
@@ -245,13 +245,13 @@ class fMPO:
         :param D: bond dimension to truncate to during left sweep
         """
 
-        #Check that right most site is hairy, and no others are.
-        #Since procedure only works for truncated mpo
+        # Check that right most site is hairy, and no others are.
+        # Since procedure only works for truncated mpo
         for i, site in enumerate(self):
             if i < self.L - 1:
-                assert(site.shape[1] == 1)
+                assert site.shape[1] == 1
             else:
-                assert(site.shape[1] == 16)
+                assert site.shape[1] == 16
 
         if D is not None:
             self.D = min(D, self.D)
@@ -324,6 +324,7 @@ class fMPO:
                     )
 
         return self
+
 
 if __name__ == "__main__":
     pass

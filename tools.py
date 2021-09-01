@@ -50,9 +50,9 @@ def bitstring_data_to_QTN(data, n_hairysites, n_sites, truncated=False):
     prod_state_data = bitstring_to_product_state_data(data)
     if truncated:
 
-        #Check to see whether state is one-site hairy
+        # Check to see whether state is one-site hairy
         site = prod_state_data[0][-1]
-        #If true: state is one-site hairy
+        # If true: state is one-site hairy
         if math.log(site.shape[0], 4) > 1:
             n_hairysites = 1
 
