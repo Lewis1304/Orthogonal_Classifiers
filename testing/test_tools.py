@@ -41,6 +41,9 @@ n_pixels = len(x_train[0])
 hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites
 )
+one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
+    possible_labels, n_hairysites, n_sites, one_site = True
+)
 
 # Only do 2 paddings  (for speed)
 hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
@@ -52,6 +55,12 @@ quimb_hairy_bitstrings = bitstring_data_to_QTN(
 )
 truncated_quimb_hairy_bitstrings = bitstring_data_to_QTN(
     hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
+)
+one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
+)
+truncated_one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
 )
 quimb_padded_hairy_bitstrings = [
     bitstring_data_to_QTN(padding, n_hairysites, n_sites)
@@ -111,13 +120,6 @@ def test_bitstrings():
 
 def test_bitstring_data_to_QTN():
 
-    # Check whether all labels are converted to quimb_tensors
-    assert len(quimb_hairy_bitstrings) == len(possible_labels)
-
-    # Check correct number of sites
-    for label in possible_labels:
-        assert quimb_hairy_bitstrings[label].num_tensors == n_sites
-
     # Check data isn't altered when converted to quimb tensor
     # This checks shape and data
     for label in possible_labels:
@@ -126,9 +128,25 @@ def test_bitstring_data_to_QTN():
         ):
             assert np.array_equal(a, b.data.squeeze())
 
+    #Check for one-site
+    for label in possible_labels:
+        for a, b in zip(
+            one_site_bitstrings_data_untruncated_data[label], one_site_quimb_hairy_bitstrings[label]
+        ):
+            assert np.array_equal(a, b.data.squeeze())
+
     # Check bitstrings are orthonormal
     for i, a in enumerate(quimb_hairy_bitstrings):
         for j, b in enumerate(quimb_hairy_bitstrings):
+            if i == j:
+                # If 1, quimb automatically changes from tensor to int
+                assert np.isclose((a @ b), 1)
+            else:
+                assert np.isclose((a @ b).norm(), 0)
+
+    # Check for one-site
+    for i, a in enumerate(one_site_quimb_hairy_bitstrings):
+        for j, b in enumerate(one_site_quimb_hairy_bitstrings):
             if i == j:
                 # If 1, quimb automatically changes from tensor to int
                 assert np.isclose((a @ b), 1)
@@ -195,12 +213,25 @@ def test_bitstring_data_to_QTN():
             site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
             assert np.array_equal(site.data.squeeze(), basis_vectors[site_qubits_state])
 
+    #one-site
+    for i, label in enumerate(possible_labels):
+        site = one_site_quimb_hairy_bitstrings[label].tensors[-1]
+        assert np.array_equal(site.data.squeeze(), np.eye(16)[i])
+
+
+
     # Test truncated sites are correct
     # This checks shape and data
     # Test that projection is not null. i.e. equal to 0
     for label in possible_labels:
         for i, site in enumerate(truncated_quimb_hairy_bitstrings[label]):
             if i < (n_sites - n_hairysites):
+                assert site.data == np.array([1])
+
+    #Check for one-site
+    for label in possible_labels:
+        for i, site in enumerate(truncated_one_site_quimb_hairy_bitstrings[label]):
+            if i < (n_sites - 1):
                 assert site.data == np.array([1])
 
 
@@ -436,4 +467,4 @@ def test_save_and_load_qtn_classifier():
 
 
 if __name__ == "__main__":
-    test_save_and_load_qtn_classifier()
+    test_bitstring_data_to_QTN()

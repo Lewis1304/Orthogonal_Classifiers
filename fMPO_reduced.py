@@ -74,8 +74,17 @@ class fMPO:
         """compress: compress internal bonds of fMPO,
         potentially with a orthogonalisation
 
-        :param D: bond dimension to truncate to during left sweep
+        :param D: bond dimension to truncate to during left & right sweep
         """
+
+        #Check that right most site is hairy, and no others are.
+        #Since procedure only works for truncated mpo
+        for i, site in enumerate(self):
+            if i < self.L - 2:
+                assert(site.shape[1] == 1)
+            else:
+                assert(site.shape[1] == 4)
+
         if D is not None:
             self.D = min(D, self.D)
 
@@ -229,6 +238,92 @@ class fMPO:
 
         return self
 
+    def compress_one_site(self, D=None, orthogonalise=True):
+        """compress: compress internal bonds of fMPO with one hairy site,
+        potentially with a orthogonalisation
+
+        :param D: bond dimension to truncate to during left sweep
+        """
+
+        #Check that right most site is hairy, and no others are.
+        #Since procedure only works for truncated mpo
+        for i, site in enumerate(self):
+            if i < self.L - 1:
+                assert(site.shape[1] == 1)
+            else:
+                assert(site.shape[1] == 16)
+
+        if D is not None:
+            self.D = min(D, self.D)
+
+        def split(datum):
+            """split: Do SVD and reshape A matrix
+            :param M: matrix
+            """
+            d, s, i, j = datum.shape
+            """
+            reshapes d with i, s with j such that M.shape = (d*i,s*j)
+            """
+            M = datum.transpose(0, 2, 1, 3).reshape(d * i, s * j)
+            u, S, v = svd(M, full_matrices=False)
+
+            """
+            u is reshaped from (d*i,k) to (d,i,k)
+            v is reshaped from (k,s*j) to (k,s,j)
+            k = min(d*i,s*j)
+            """
+            u = expand_dims(u.reshape(d, i, -1), 1)
+            v = expand_dims(v.reshape(-1, s, j), 0).transpose(0, 2, 1, 3)
+            return u, diag(S), v
+
+        def truncate_MPO(A, S, V, D):
+            """truncate: truncate A, S, V to D. Ditch all zero diagonals
+
+            :param A: SVD U matrix reshaped
+            :param S: SVD S matrix
+            :param V: SVD V matrix
+            :param D: Bond dimension to truncate to
+            """
+
+            if D is None:
+                D = rank(S)
+
+            A = A[:, :, :, :D]
+            S = S[:D, :D]
+            V = V[:, :, :D, :]
+
+            return A, S, V
+
+        for m in range(len(self.data)):
+
+            # sort out canonicalisation
+            if m + 1 < len(self.data):
+                A, S, V = split(self[m])
+                self[m], S, V = truncate_MPO(A, S, V, D)
+                """
+                ncon: Contract S@V j leg with self[m+1] i leg.
+                transpose: take (d_1,s_1,i_1,d_2,s_2,j_2) to (d_1,d_2,s_1,s_2,i_1,j_2)
+                reshape: group together d and s legs such that .shape = (d_1d_2,s_1s_2,i_1,j_2)
+                """
+                d_1, s_1, i_1, j_1 = (S @ V).shape
+                d_2, s_2, i_2, j_2 = self[m + 1].shape
+
+                self[m + 1] = (
+                    ncon((S @ V, self[m + 1]), [[-1, -2, -3, 4], [-4, -5, 4, -6]])
+                    .transpose(0, 3, 1, 4, 2, 5)
+                    .reshape(d_1 * d_2, s_1 * s_2, i_1, j_2)
+                )
+            else:
+                d, s, i, j = self[m].shape
+                if orthogonalise:
+
+                    self[m] = (
+                        polar(self[m].transpose(0, 2, 1, 3).reshape(d * i, s * j))[0]
+                        .reshape(d, i, s, j)
+                        .transpose(0, 2, 1, 3)
+                    )
+
+        return self
 
 if __name__ == "__main__":
     pass

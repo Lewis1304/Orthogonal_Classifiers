@@ -7,7 +7,7 @@ Experiments
 
 
 def initialise_experiment(
-    n_samples, D_total, padded=False, initialise_classifier=False, orthogonalise=False
+    n_samples, D_total, padded=False, truncated = False, one_site = False, initialise_classifier=False
 ):
     """
     param: n_samples: Number of data samples (total)
@@ -25,19 +25,20 @@ def initialise_experiment(
 
     # Create hairy bitstrings
     hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairysites, n_sites
+        possible_labels, n_hairysites, n_sites, one_site
     )
     q_hairy_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, n_hairysites, n_sites, truncated=True
+        hairy_bitstrings_data, n_hairysites, n_sites, truncated=truncated
     )
-    # q_hairy_bitstrings[0].draw(show_inds = False, show_tags = False)
+    #q_hairy_bitstrings[0].draw(show_inds = False, show_tags = False)
+
     # MPS encode data
     mps_train = mps_encoding(x_train, D_total)
 
     # MPO encode data (already encoded as mps)
     # Has shape: # classes, mpo.shape
     mpo_train = mpo_encoding(mps_train, y_train, q_hairy_bitstrings)
-    # mpo_train[0][0].draw(show_inds = False, show_tags = False)
+    #mpo_train[0].draw(show_inds = False, show_tags = False)
 
     # Initial Classifier
     if initialise_classifier:
@@ -225,7 +226,7 @@ def two_classes_experiment(mpo_classifier, mps_train, q_hairy_bitstrings, y_trai
     # fig.tight_layout()  # otherwise the right y-label is slightly clipped
     plt.show()
 
-def all_classes_experiment_ortho_inbetween(
+def all_classes_experiment(
     mpo_classifier,
     mps_train,
     q_hairy_bitstrings,
@@ -233,54 +234,8 @@ def all_classes_experiment_ortho_inbetween(
     predict_func,
     loss_func,
     title,
+    ortho_inbetween = False
 ):
-    print('Experiment: Orthogonalise inbetween.')
-    classifier_opt = mpo_classifier
-    #classifier_opt = compress_QTN(mpo_classifier, D=None, orthogonalise=False)
-    initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
-
-    predicitions_store = [initial_predictions]
-    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 3)]
-    # variances = [evaluate_prediction_variance(initial_predictions)]
-    losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
-
-    def optimiser(classifier):
-        optmzr = TNOptimizer(
-            classifier,  # our initial input, the tensors of which to optimize
-            loss_fn=lambda c: loss_func(c, mps_train, q_hairy_bitstrings, y_train),
-            norm_fn=normalize_tn,
-            autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
-            optimizer="nadam",  # supplied to scipy.minimize
-        )
-        return optmzr
-
-    for i in range(100):
-        optmzr = optimiser(classifier_opt)
-        classifier_opt = optmzr.optimize(1)
-        classifier_opt = compress_QTN(classifier_opt, D=None, orthogonalise=True)
-
-        predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
-        predicitions_store.append(predictions)
-        accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_train, 3))
-        # variances.append(evaluate_prediction_variance(predictions))
-
-        losses.append(optmzr.loss)
-
-        plot_results((accuracies, losses, predicitions_store), title)
-        save_qtn_classifier(classifier_opt, title)
-
-    return accuracies, losses
-
-def all_classes_experiment_no_ortho(
-    mpo_classifier,
-    mps_train,
-    q_hairy_bitstrings,
-    y_train,
-    predict_func,
-    loss_func,
-    title,
-):
-    print('Experiment: No Orthogonalisation.')
     classifier_opt = mpo_classifier
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
@@ -303,6 +258,9 @@ def all_classes_experiment_no_ortho(
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
 
+        if ortho_inbetween:
+            classifier_opt = compress_QTN(classifier_opt, D=None, orthogonalise=True)
+
         predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
         predicitions_store.append(predictions)
         accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_train, 3))
@@ -314,6 +272,7 @@ def all_classes_experiment_no_ortho(
         save_qtn_classifier(classifier_opt, title)
 
     return accuracies, losses
+
 
 def sequential_mpo_classifier_experiment():
     n_samples = 1000
@@ -398,17 +357,18 @@ if __name__ == "__main__":
         num_samples,
         D_total,
         padded=False,
+        truncated = True,
+        one_site = True,
         initialise_classifier=False,
-        orthogonalise=False,
     )
     mps_images, labels = data
 
-    all_classes_experiment_ortho_inbetween(
+    all_classes_experiment(
         classifier,
         mps_images,
         bitstrings,
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "random_initialise_stoudenmire_ortho_inbetween",
+        "random_initialise_stoudenmire_not_truncated_seed_420",
     )

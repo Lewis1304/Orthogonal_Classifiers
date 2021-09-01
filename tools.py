@@ -4,6 +4,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
 import tensorflow as tf
 import numpy as np
+import math
 
 import quimb
 import quimb.tensor as qtn
@@ -48,6 +49,13 @@ def bitstring_data_to_QTN(data, n_hairysites, n_sites, truncated=False):
     # Doesn't work for truncated_data
     prod_state_data = bitstring_to_product_state_data(data)
     if truncated:
+
+        #Check to see whether state is one-site hairy
+        site = prod_state_data[0][-1]
+        #If true: state is one-site hairy
+        if math.log(site.shape[0], 4) > 1:
+            n_hairysites = 1
+
         prod_state_data = [
             [
                 site[:1] if i < (n_sites - n_hairysites) else site
@@ -107,7 +115,7 @@ def data_to_QTN(data):
     for j, site in enumerate(data):
         next_ind = rand_uuid()
         tensor = qtn.Tensor(
-            site, inds=(f"d{j}", f"s{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+            site, inds=(f"k{j}", f"s{j}", previous_ind, next_ind), tags=oset([f"{j}"])
         )
         previous_ind = next_ind
         qtn_data.append(tensor)
