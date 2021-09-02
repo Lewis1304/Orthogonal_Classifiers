@@ -357,7 +357,7 @@ def plot_results(results, title):
 
 if __name__ == "__main__":
 
-    num_samples = 500
+    num_samples = 1000
     D_total = 10
 
     data, classifier, bitstrings = initialise_experiment(
@@ -370,6 +370,9 @@ if __name__ == "__main__":
     )
     mps_images, labels = data
 
+    print(classifier)
+
+
     all_classes_experiment(
         classifier,
         mps_images,
@@ -377,5 +380,5 @@ if __name__ == "__main__":
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "one_site_stoudenmire_not_truncated_seed_420",
+        "one_site_stoudenmire_truncated_seed_420",
     )
