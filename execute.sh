@@ -1,6 +1,6 @@
 #!/bin/bash -l
 #SBATCH -n 1
-#SBATCH --job-name=1sitetr
+#SBATCH --job-name=1sitentr
 #SBATCH --output=logs/s_o_class.%j
 #SBATCH --time=3-00:00
 #SBATCH --mem=128GB

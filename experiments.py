@@ -261,7 +261,7 @@ def all_classes_experiment(
         )
         return optmzr
 
-    for i in range(500):
+    for i in range(2000):
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
 
@@ -364,7 +364,7 @@ if __name__ == "__main__":
         num_samples,
         D_total,
         padded=False,
-        truncated=True,
+        truncated=False,
         one_site=True,
         initialise_classifier=False,
     )
@@ -380,5 +380,5 @@ if __name__ == "__main__":
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "one_site_stoudenmire_truncated_seed_420",
+        "one_site_stoudenmire_not_truncated_seed_420_more_epochs",
     )
