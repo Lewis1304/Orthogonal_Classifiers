@@ -261,7 +261,7 @@ def all_classes_experiment(
         )
         return optmzr
 
-    for i in range(2000):
+    for i in range(10000):
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
 
@@ -322,6 +322,31 @@ def sequential_mpo_classifier_experiment():
 
     return classifier, result
 
+def svd_classifier(dir, mps_images, bitstrings, labels):
+
+    classifier_og = load_qtn_classifier(dir)
+    print(classifier_og)
+
+    predictions_og = classifier_predictions(classifier_og, mps_images, bitstrings)
+    print(evaluate_classifier_top_k_accuracy(predictions_og, labels, 3))
+
+    """
+    Shifted, but not orthogonalised
+    """
+    classifier_shifted = compress_QTN(classifier_og, None, False)
+    print(classifier_shifted)
+
+    predictions_shifted = classifier_predictions(classifier_shifted, mps_images, bitstrings)
+    print(evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 3))
+
+    """
+    Shifted, and orthogonalised
+    """
+    classifier_ortho = compress_QTN(classifier_og, None, True)
+    print(classifier_ortho)
+
+    predictions_ortho = classifier_predictions(classifier_ortho, mps_images, bitstrings)
+    print(evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 3))
 
 """
 Results
@@ -364,13 +389,13 @@ if __name__ == "__main__":
         num_samples,
         D_total,
         padded=False,
-        truncated=False,
+        truncated=True,
         one_site=True,
         initialise_classifier=False,
     )
     mps_images, labels = data
 
-    print(classifier)
+    classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
 
 
     all_classes_experiment(
@@ -380,5 +405,5 @@ if __name__ == "__main__":
         labels,
         classifier_predictions,
         stoundenmire_loss,
-        "one_site_stoudenmire_not_truncated_seed_420_more_epochs",
+        "one_site_stoudenmire_not_truncated_seed_420_even_more_epochs",
     )
