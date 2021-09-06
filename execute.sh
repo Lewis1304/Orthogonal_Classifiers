@@ -1,8 +1,8 @@
 #!/bin/bash -l
 #SBATCH -n 1
-#SBATCH --job-name=_ortho_in
+#SBATCH --job-name=1sitentr
 #SBATCH --output=logs/s_o_class.%j
-#SBATCH --time=2-00:00
+#SBATCH --time=3-00:00
 #SBATCH --mem=128GB
 module load devtools/anaconda
 conda deactivate
