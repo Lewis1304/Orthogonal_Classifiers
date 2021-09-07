@@ -49,7 +49,7 @@ def initialise_experiment(
     if initialise_classifier:
         mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
     else:
-        mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
+        mpo_classifier = create_mpo_classifier(mpo_train)
 
     if padded:
         hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
@@ -240,10 +240,17 @@ def all_classes_experiment(
     predict_func,
     loss_func,
     title,
+    squeezed = False,
     ortho_inbetween=False,
 ):
     print(title)
     classifier_opt = mpo_classifier
+
+    if squeezed:
+        q_hairy_bitstrings = [i.squeeze() for i in q_hairy_bitstrings]
+        classifier_opt = mpo_classifier.squeeze()
+        mps_train = [i.squeeze() for i in mps_train]
+
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
@@ -260,7 +267,7 @@ def all_classes_experiment(
             optimizer="nadam",  # supplied to scipy.minimize
         )
         return optmzr
-
+    print(classifier_opt)
     for i in range(10000):
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
@@ -325,28 +332,31 @@ def sequential_mpo_classifier_experiment():
 def svd_classifier(dir, mps_images, bitstrings, labels):
 
     classifier_og = load_qtn_classifier(dir)
-    print(classifier_og)
+    #print('Original Classifier:', classifier_og)
 
     predictions_og = classifier_predictions(classifier_og, mps_images, bitstrings)
-    print(evaluate_classifier_top_k_accuracy(predictions_og, labels, 3))
+    print('Original Classifier Accuracy:', evaluate_classifier_top_k_accuracy(predictions_og, labels, 3))
+    print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
 
     """
     Shifted, but not orthogonalised
     """
     classifier_shifted = compress_QTN(classifier_og, None, False)
-    print(classifier_shifted)
+    #print(classifier_shifted)
 
     predictions_shifted = classifier_predictions(classifier_shifted, mps_images, bitstrings)
-    print(evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 3))
+    print('Shifted Classifier Accuracy:', evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 3))
+    print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
 
     """
     Shifted, and orthogonalised
     """
     classifier_ortho = compress_QTN(classifier_og, None, True)
-    print(classifier_ortho)
+    #print(classifier_ortho)
 
     predictions_ortho = classifier_predictions(classifier_ortho, mps_images, bitstrings)
-    print(evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 3))
+    print('Orthogonalised Classifier Accuracy:', evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 3))
+    print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
 
 """
 Results
@@ -395,7 +405,9 @@ if __name__ == "__main__":
     )
     mps_images, labels = data
 
-    classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
+    #svd_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs', mps_images, bitstrings, labels)
+
+    #classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
 
 
     all_classes_experiment(
@@ -403,7 +415,8 @@ if __name__ == "__main__":
         mps_images,
         bitstrings,
         labels,
-        classifier_predictions,
-        stoundenmire_loss,
-        "one_site_stoudenmire_not_truncated_seed_420_even_more_epochs",
+        squeezed_classifier_predictions,
+        squeezed_stoundenmire_loss,
+        "one_site_classifier_squeezed_stoudenmire_loss",
+        squeezed = True
     )
