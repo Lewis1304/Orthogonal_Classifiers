@@ -81,6 +81,24 @@ padded_predictions = np.array(
     )
 )
 
+"""
+Squeeze all tensornetworks- hopefully speeds up contraction.
+Only need to test after initialisation- i.e. loss & prediction
+
+#Bitstrings
+quimb_hairy_bitstrings_squeezed = [i.squeeze() for i in quimb_hairy_bitstrings]
+truncated_quimb_hairy_bitstrings_squeezed = [i.squeeze() for i in truncated_quimb_hairy_bitstrings]
+truncated_one_site_quimb_hairy_bitstrings_squeezed = [i.squeeze() for i in truncated_one_site_quimb_hairy_bitstrings]
+quimb_padded_hairy_bitstrings_squeezed = [[i.squeeze() for i in j] for j in quimb_padded_hairy_bitstrings]
+
+# Data
+mps_train_squeezed = [i.squeeze() for i in mps_train]
+mpo_train_squeezed = [i.squeeze() for i in mps_train]
+print(truncated_one_site_quimb_hairy_bitstrings)
+print(mpo_classifier.squeeze())
+#Classifier
+mpo_classifier_squeezed = mpo_classifier.squeeze()
+"""
 
 def test_create_hairy_bitstrings_data():
 
@@ -432,7 +450,6 @@ def test_green_loss():
     loss = green_loss(digit, mps_images, quimb_hairy_bitstrings, train_label)
     assert np.round(loss, 3) == -1.0
 
-
 # TODO: Add truncated_quimb_hairy_bitstrings test
 def test_padded_green_loss():
 
@@ -595,4 +612,4 @@ def test_evaluate_classifier_top_k_accuracy():
 
 
 if __name__ == "__main__":
-    test_compress_one_site()
+    test_squeezed_green_loss()
