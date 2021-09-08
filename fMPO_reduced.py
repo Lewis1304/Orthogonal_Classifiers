@@ -238,7 +238,7 @@ class fMPO:
 
         return self
 
-    def compress_one_site(self, D=None, orthogonalise=True):
+    def compress_one_site(self, D=None, orthogonalise=False):
         """compress: compress internal bonds of fMPO with one hairy site,
         potentially with a orthogonalisation
 
