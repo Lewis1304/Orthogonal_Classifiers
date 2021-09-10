@@ -358,21 +358,6 @@ def squeezed_green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     )
     return -summed_overlaps / n_samples
 
-def squeezed_delta_green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    # Loss for more than one class
-    # Trains over all images in classes specified by y_train
-
-    n_samples = len(mps_train)
-    possible_labels = list(set(y_train))
-    summed_overlaps = np.sum(
-        [
-            [int(y_train[i] == l) * (mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) ** 2 for l in possible_labels]
-            for i in range(n_samples)
-        ]
-    )
-    return -summed_overlaps / n_samples
-
-
 def padded_green_loss(classifier, mps_train, q_padded_hairy_bitstrings, y_train):
     n_samples = len(mps_train)
     possible_paddings = len(q_padded_hairy_bitstrings)
@@ -436,6 +421,26 @@ def squeezed_stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_trai
 
     return 0.5 * np.sum(overlaps)
 
+
+def mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    overlaps = [(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]) - 1)**2  for i in range(len(mps_train))]
+    return np.sum(overlaps) / len(mps_train)
+
+def abs_mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    overlaps = [(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - 1)**2  for i in range(len(mps_train))]
+    return np.sum(overlaps) / len(mps_train)
+
+def cross_entropy_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    overlaps = [np.log(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))) for i in range(len(mps_train))]
+    return -np.sum(overlaps) / len(mps_train)
+
+def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    overlaps = [[(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
+    return np.sum(overlaps) / len(mps_train)
+
+def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    overlaps = [[(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
+    return np.sum(overlaps) / len(mps_train)
 
 def normalize_tn(tn):
     return tn / (tn.H @ tn) ** 0.5
