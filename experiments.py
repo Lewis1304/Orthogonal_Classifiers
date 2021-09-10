@@ -49,7 +49,7 @@ def initialise_experiment(
     if initialise_classifier:
         mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
     else:
-        mpo_classifier = create_mpo_classifier(mpo_train)
+        mpo_classifier = create_mpo_classifier(mpo_train, seed = 420)
 
     if padded:
         hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
@@ -268,7 +268,8 @@ def all_classes_experiment(
         )
         return optmzr
     print(classifier_opt)
-    for i in range(10000):
+    print(q_hairy_bitstrings[0])
+    for i in range(1000):
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
 
@@ -393,7 +394,7 @@ def plot_results(results, title):
 if __name__ == "__main__":
 
     num_samples = 1000
-    D_total = 10
+    D_total = 32
 
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
@@ -417,6 +418,5 @@ if __name__ == "__main__":
         labels,
         squeezed_classifier_predictions,
         squeezed_stoundenmire_loss,
-        "one_site_classifier_squeezed_stoudenmire_loss",
-        squeezed = True
-    )
+        "squeezed_one_site_D_total_32_classifier_stoudenmire_loss_seed_420",
+        squeezed = True)

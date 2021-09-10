@@ -398,11 +398,18 @@ def stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     n_samples = len(mps_train)
     possible_labels = list(set(y_train))
     overlaps = []
-    # summed_overlaps = np.sum([ [((train_image.H @ (classifier @ q_hairy_bitstrings[y_train[i]])).norm() - (1 if y_train[i] == label else 0))**2 for train_image in mps_train] for i in range(n_samples)])
-    # return -summed_overlaps/n_samples
     for i in range(len(mps_train)):
         for label in possible_labels:
-            overlap = ((mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])).norm() - int(y_train[i] == label)) ** 2
+            #overlap = ((mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])).norm() - int(y_train[i] == label)) ** 2
+            if y_train[i] == label:
+                overlap = (
+                    (mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])).norm()
+                    - 1
+                ) ** 2
+            else:
+                overlap = (
+                    mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
+                ).norm() ** 2
             overlaps.append(overlap)
     return 0.5 * np.sum(overlaps)
 
@@ -412,12 +419,21 @@ def squeezed_stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_trai
     n_samples = len(mps_train)
     possible_labels = list(set(y_train))
     overlaps = []
-    # summed_overlaps = np.sum([ [((train_image.H @ (classifier @ q_hairy_bitstrings[y_train[i]])).norm() - (1 if y_train[i] == label else 0))**2 for train_image in mps_train] for i in range(n_samples)])
-    # return -summed_overlaps/n_samples
     for i in range(len(mps_train)):
         for label in possible_labels:
-            overlap = (abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])) - int(y_train[i] == label)) ** 2
+            #overlap = (mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]) - int(y_train[i] == label)) ** 2
+
+            if y_train[i] == label:
+                overlap = (
+                    abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
+                    - 1
+                ) ** 2
+            else:
+                overlap = abs(
+                    mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
+                ) ** 2
             overlaps.append(overlap)
+
     return 0.5 * np.sum(overlaps)
 
 
