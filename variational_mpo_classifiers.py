@@ -12,6 +12,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import idx2numpy as idn
+import autograd.numpy as anp
 
 import quimb.tensor as qtn
 from quimb.tensor.tensor_core import rand_uuid
@@ -423,7 +424,7 @@ def squeezed_stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_trai
 
 
 def mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]) - 1)**2  for i in range(len(mps_train))]
+    overlaps = [(anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - 1)**2  for i in range(len(mps_train))]
     return np.sum(overlaps) / len(mps_train)
 
 def abs_mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
@@ -431,15 +432,17 @@ def abs_mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     return np.sum(overlaps) / len(mps_train)
 
 def cross_entropy_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [np.log(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))) for i in range(len(mps_train))]
+    overlaps = [anp.log(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))) for i in range(len(mps_train))]
     return -np.sum(overlaps) / len(mps_train)
 
 def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    possible_labels = list(set(y_train))
     overlaps = [[(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
     return np.sum(overlaps) / len(mps_train)
 
 def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [[(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
+    possible_labels = list(set(y_train))
+    overlaps = [[(anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
     return np.sum(overlaps) / len(mps_train)
 
 def normalize_tn(tn):
