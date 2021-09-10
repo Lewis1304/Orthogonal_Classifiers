@@ -418,5 +418,5 @@ if __name__ == "__main__":
         labels,
         squeezed_classifier_predictions,
         squeezed_stoundenmire_loss,
-        "squeezed_one_site_D_total_32_classifier_stoudenmire_loss_seed_420",
+        "squeezed_one_site_D_total_32_stoudenmire_loss_seed_420",
         squeezed = True)
