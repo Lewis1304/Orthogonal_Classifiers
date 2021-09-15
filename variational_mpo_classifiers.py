@@ -82,53 +82,6 @@ def create_hairy_bitstrings_data(
     return untruncated
 
 
-def create_padded_hairy_bitstrings_data(possible_labels, n_hairysites, n_sites):
-
-    bitstrings = create_bitstrings(possible_labels, n_hairysites)
-    hairy_sites = np.array(
-        [
-            [
-                [1, 0, 0, 0]
-                * (1 - int(bitstring[i : i + 2][0]))
-                * (1 - int(bitstring[i : i + 2][1]))
-                + [0, 1, 0, 0]
-                * (1 - int(bitstring[i : i + 2][0]))
-                * (int(bitstring[i : i + 2][1]))
-                + [0, 0, 1, 0]
-                * (int(bitstring[i : i + 2][0]))
-                * (1 - int(bitstring[i : i + 2][1]))
-                + [0, 0, 0, 1]
-                * (int(bitstring[i : i + 2][0]))
-                * (int(bitstring[i : i + 2][1]))
-                for i in range(0, len(bitstring), 2)
-            ]
-            for bitstring in bitstrings
-        ]
-    )
-    bitstrings_others = [
-        bin(k)[2:].zfill(n_sites - n_hairysites)
-        for k in range(2 ** (n_sites - n_hairysites))
-    ]
-    other_sites = [
-        [
-            [
-                [1, 0, 0, 0] * (1 - int(bstr_site)) + [0, 1, 0, 0] * int(bstr_site)
-                for bstr_site in bitstring
-            ]
-            for label in possible_labels
-        ]
-        for bitstring in bitstrings_others
-    ]
-
-    untruncated = np.array(
-        [
-            np.append(np.array(other_site), hairy_sites, axis=1)
-            for other_site in other_sites
-        ]
-    )
-    return untruncated
-
-
 """
 MPS Encoding
 """
@@ -357,95 +310,13 @@ def initialise_sequential_mpo_classifier(train_data, train_labels, D_total):
 Train Classifier
 """
 
-
 def green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    # Loss for more than one class
-    # Trains over all images in classes specified by y_train
-    n_samples = len(mps_train)
-    summed_overlaps = np.sum(
-        [
-            (mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])).norm() ** 2
-            for i in range(n_samples)
-        ]
-    )
-    return -summed_overlaps / n_samples
+    overlaps = [anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))**2  for i in range(len(mps_train))]
+    return -np.sum(overlaps) / len(mps_train)
 
-def squeezed_green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    # Loss for more than one class
-    # Trains over all images in classes specified by y_train
-
-    n_samples = len(mps_train)
-    summed_overlaps = np.sum(
-        [
-            (mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) ** 2
-            for i in range(n_samples)
-        ]
-    )
-    return -summed_overlaps / n_samples
-
-def padded_green_loss(classifier, mps_train, q_padded_hairy_bitstrings, y_train):
-    n_samples = len(mps_train)
-    possible_paddings = len(q_padded_hairy_bitstrings)
-    summed_overlaps = np.sum(
-        [
-            [
-                (
-                    mps_train[i].H
-                    @ (classifier @ q_padded_hairy_bitstrings[k][y_train[i]])
-                ).norm()
-                ** 2
-                for i in range(n_samples)
-            ]
-            for k in range(possible_paddings)
-        ]
-    )
-    return -summed_overlaps / n_samples
-
-
-def stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    # Loss for more than one class
-    # Trains over all images in classes specified by y_train
-    n_samples = len(mps_train)
-    possible_labels = list(set(y_train))
-    overlaps = []
-    for i in range(len(mps_train)):
-        for label in possible_labels:
-            #overlap = ((mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])).norm() - int(y_train[i] == label)) ** 2
-            if y_train[i] == label:
-                overlap = (
-                    (mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])).norm()
-                    - 1
-                ) ** 2
-            else:
-                overlap = (
-                    mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
-                ).norm() ** 2
-            overlaps.append(overlap)
-    return 0.5 * np.sum(overlaps)
-
-def squeezed_stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    # Loss for more than one class
-    # Trains over all images in classes specified by y_train
-    n_samples = len(mps_train)
-    possible_labels = list(set(y_train))
-    overlaps = []
-    for i in range(len(mps_train)):
-        for label in possible_labels:
-            #overlap = (mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]) - int(y_train[i] == label)) ** 2
-
-            if y_train[i] == label:
-                overlap = (
-                    abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
-                    - 1
-                ) ** 2
-            else:
-                overlap = abs(
-                    mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
-                ) ** 2
-            overlaps.append(overlap)
-
-    return 0.5 * np.sum(overlaps)
-
+def abs_green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    overlaps = [abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))**2  for i in range(len(mps_train))]
+    return -np.sum(overlaps) / len(mps_train)
 
 def mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [(anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - 1)**2  for i in range(len(mps_train))]
@@ -459,19 +330,18 @@ def cross_entropy_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [anp.log(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))) for i in range(len(mps_train))]
     return -np.sum(overlaps) / len(mps_train)
 
-def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    possible_labels = list(set(y_train))
-    overlaps = [[(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
-    return np.sum(overlaps) / len(mps_train)
-
 def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     possible_labels = list(set(y_train))
     overlaps = [[(anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
     return np.sum(overlaps) / len(mps_train)
 
+def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+    possible_labels = list(set(y_train))
+    overlaps = [[(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
+    return np.sum(overlaps) / len(mps_train)
+
 def normalize_tn(tn):
     return tn / (tn.H @ tn) ** 0.5
-
 
 def orthogonalise_and_normalize(tn):
     tn = compress_QTN(tn, D=None, orthogonalise=True)
@@ -495,23 +365,6 @@ def squeezed_classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings
     # assumes mps_test is aligned with appropiate labels, y_test
     predictions = [
         [abs(test_image.H @ (mpo_classifier @ b)) for b in q_hairy_bitstrings]
-        for test_image in mps_test
-    ]
-    return predictions
-
-def padded_classifier_predictions(mpo_classifier, mps_test, q_padded_hairy_bitstrings):
-    # assumes mps_test is aligned with appropiate labels, y_test
-    predictions = [
-        np.sum(
-            [
-                [
-                    (test_image.H @ (mpo_classifier @ b)).norm()
-                    for b in q_padded_hairy_bitstrings[k]
-                ]
-                for k in range(len(q_padded_hairy_bitstrings))
-            ],
-            axis=0,
-        )
         for test_image in mps_test
     ]
     return predictions

@@ -9,7 +9,6 @@ Experiments
 def initialise_experiment(
     n_samples,
     D_total,
-    padded=False,
     truncated=False,
     one_site=False,
     initialise_classifier=False,
@@ -50,15 +49,6 @@ def initialise_experiment(
         mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
     else:
         mpo_classifier = create_mpo_classifier(mpo_train, seed = 420)
-
-    if padded:
-        hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
-            possible_labels, n_hairysites, n_sites
-        )
-        q_hairy_bitstrings = [
-            bitstring_data_to_QTN(padding)
-            for padding in hairy_bitstrings_data_padded_data
-        ]
 
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
 
@@ -445,7 +435,6 @@ if __name__ == "__main__":
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
         D_total,
-        padded=False,
         truncated=True,
         one_site=True,
         initialise_classifier=False,
@@ -454,11 +443,7 @@ if __name__ == "__main__":
 
 
 
-    plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
-
-
-
-    assert()
+    #plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
     #classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
 
 
