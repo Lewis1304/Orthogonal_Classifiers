@@ -455,8 +455,10 @@ def test_QTN_to_fMPO_and_back():
 
 
 def test_save_and_load_qtn_classifier():
+    #Test non-squeezed classifier
     save_qtn_classifier(mpo_classifier, "pytest")
     loaded_classifier = load_qtn_classifier("pytest")
+
     assert np.array(
         [
             np.array_equal(x.data, y.data)
@@ -464,6 +466,38 @@ def test_save_and_load_qtn_classifier():
         ]
     ).all()
 
+    #Test squeezed classifier loading (not truncated)
+    squeezed_classifier = mpo_classifier.squeeze()
+    save_qtn_classifier(squeezed_classifier, "pytest_squeezed")
+    #loading automatically pads classifier
+    loaded_squeezed_classifier = load_qtn_classifier("pytest_squeezed")
+
+    assert np.array(
+        [
+            np.array_equal(x.data, y.data)
+            for x, y in zip(mpo_classifier.tensors, loaded_squeezed_classifier.tensors)
+        ]
+    ).all()
+
+    #Test squeezed classifier loading (truncated)
+    truncated_mpo_train = mpo_encoding(mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings)
+
+    truncated_mpo_classifier = create_mpo_classifier(truncated_mpo_train, seed=420).squeeze()
+
+    save_qtn_classifier(truncated_mpo_classifier, "pytest_squeezed_truncated")
+    loaded_squeezed_truncated_classifier = load_qtn_classifier("pytest_squeezed_truncated")
+
+    truncated_mpo_classifier = create_mpo_classifier(truncated_mpo_train, seed=420)
+
+    assert np.array(
+        [
+            np.array_equal(x.data, y.data)
+            for x, y in zip(truncated_mpo_classifier.tensors, loaded_squeezed_truncated_classifier.tensors)
+        ]
+    ).all()
+
+
 
 if __name__ == "__main__":
-    test_bitstring_data_to_QTN()
+    #test_bitstring_data_to_QTN()
+    test_save_and_load_qtn_classifier()

@@ -438,20 +438,96 @@ def test_batch_adding_mpos():
 
 
 # TODO: Add truncated_quimb_hairy_bitstrings test
-def test_green_loss():
+# Assumes squeezed TNs
+def test_loss_functions():
 
     # Check loss is -1.0 between same image as mps image and mpo classifier
-    digit = mpo_train[0]
+    truncated_mpo_train = [i.squeeze() for i in mpo_encoding(mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings)]
+
+    digit = truncated_mpo_train[0]
 
     # List of same images
-    mps_images = [np.array(mps_train)[0] for _ in range(10)]
+    mps_images = [mps_train[0].squeeze() for _ in range(10)]
     train_label = [y_train[0] for _ in range(10)]
 
-    loss = green_loss(digit, mps_images, quimb_hairy_bitstrings, train_label)
+    squeezed_bitstrings = [i.squeeze() for i in truncated_one_site_quimb_hairy_bitstrings]
+
+    #Green Loss
+    loss = green_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == -1.0
 
+    #Abs Green Loss
+    loss = abs_green_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    assert np.round(loss, 3) == -1.0
+
+    #MSE Loss
+    loss = mse_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    assert np.round(loss, 3) == 0.0
+
+    #Abs MSE Loss
+    loss = abs_mse_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    assert np.round(loss, 3) == 0.0
+
+    #Cross Entropy Loss
+    loss = cross_entropy_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    assert np.round(loss, 3) == 0.0
+
+    #Stoudenmire Loss
+    loss = stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    assert np.round(loss, 3) == 0.0
+
+    #Abs stoudenmire Loss
+    loss = abs_stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    assert np.round(loss, 3) == 0.0
+
+
+    # Check loss between images and randomly initialised mpo classifier
+    # All overlaps should be roughly equal. To a degree!
+    squeezed_mpo_classifier = create_mpo_classifier(mpo_encoding(mps_train, y_train, truncated_quimb_hairy_bitstrings)).squeeze()
+    squeezed_images = [i.squeeze() for i in mps_train][:10]
+    squeezed_bitstrings = [i.squeeze() for i in truncated_quimb_hairy_bitstrings]
+
+    #Green Loss
+    loss = green_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    overlap = -(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]]))**2
+    assert(np.isclose(loss, overlap, atol = 1e-03))
+
+    #Abs Green Loss
+    loss = abs_green_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    overlap = -abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]]))**2
+    assert(np.isclose(loss, overlap, atol = 1e-03))
+
+    #MSE Loss
+    loss = mse_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    overlap = ((squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - 1) ** 2
+    assert(np.isclose(loss, overlap, atol = 1e-01))
+
+    #Abs MSE Loss
+    loss = abs_mse_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    overlap = (abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - 1) ** 2
+    assert(np.isclose(loss, overlap, atol = 1e-01))
+
+    #Cross Entropy Loss
+    #Variance is higher than usual with this one. Just check both numbers are of same order
+    loss = cross_entropy_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    overlap = anp.log(abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])))
+    assert( (int(np.log(abs(loss))) + 1) == (int(np.log(abs(overlap))) + 1) )
+
+    #Stoudenmire Loss
+    loss = stoudenmire_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    mini_possible_labels = list(set(y_train[:10]))
+    overlap = np.sum([(anp.real(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - int(y_train[0] == label))**2 for label in mini_possible_labels])
+    assert(np.isclose(loss, overlap, atol = 1e-01))
+
+    #Abs Stoudenmire Loss
+    loss = abs_stoudenmire_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    mini_possible_labels = list(set(y_train[:10]))
+    overlap = np.sum([(abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - int(y_train[0] == label))**2 for label in mini_possible_labels])
+    assert(np.isclose(loss, overlap, atol = 1e-01))
+
+
 # TODO: Add truncated_quimb_hairy_bitstrings test
-def test_padded_green_loss():
+def delete_padded_green_loss():
 
     # Check loss is -1.0 between same image as mps image and mpo classifier
     # When image is zero-pad encoded (overlap is zero with other padding).
@@ -479,7 +555,7 @@ def test_padded_green_loss():
 
 
 # TODO: Add truncated_quimb_hairy_bitstrings test
-def test_stoundenmire_loss():
+def delete_stoundenmire_loss():
 
     # Check loss is 0 between same image as mps image and mpo classifier
     digit = mpo_train[0]
@@ -612,4 +688,4 @@ def test_evaluate_classifier_top_k_accuracy():
 
 
 if __name__ == "__main__":
-    test_squeezed_green_loss()
+    test_loss_functions()
