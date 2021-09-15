@@ -336,8 +336,9 @@ def svd_classifier(dir, mps_images, bitstrings, labels):
     #print('Original Classifier:', classifier_og)
 
     predictions_og = classifier_predictions(classifier_og, mps_images, bitstrings)
-    print('Original Classifier Accuracy:', evaluate_classifier_top_k_accuracy(predictions_og, labels, 3))
-    print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
+    og_acc = evaluate_classifier_top_k_accuracy(predictions_og, labels, 1)
+    print('Original Classifier Accuracy:', og_acc)
+    #print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
 
     """
     Shifted, but not orthogonalised
@@ -345,9 +346,10 @@ def svd_classifier(dir, mps_images, bitstrings, labels):
     classifier_shifted = compress_QTN(classifier_og, None, False)
     #print(classifier_shifted)
 
-    predictions_shifted = classifier_predictions(classifier_shifted, mps_images, bitstrings)
-    print('Shifted Classifier Accuracy:', evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 3))
-    print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
+    #predictions_shifted = classifier_predictions(classifier_shifted, mps_images, bitstrings)
+    #shifted_acc = evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 1)
+    #print('Shifted Classifier Accuracy:', shifted_acc)
+    #print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
 
     """
     Shifted, and orthogonalised
@@ -356,8 +358,11 @@ def svd_classifier(dir, mps_images, bitstrings, labels):
     #print(classifier_ortho)
 
     predictions_ortho = classifier_predictions(classifier_ortho, mps_images, bitstrings)
-    print('Orthogonalised Classifier Accuracy:', evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 3))
-    print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
+    ortho_acc = evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 1)
+    print('Orthogonalised Classifier Accuracy:', ortho_acc)
+    #print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
+
+    return og_acc, ortho_acc
 
 """
 Results
@@ -391,6 +396,47 @@ def plot_results(results, title):
     plt.close(fig)
 
 
+def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
+
+    different_classifiers = ['squeezed_one_site_D_total_32_full_size_abs_mse_loss_seed_420','squeezed_one_site_D_total_32_full_size_mse_loss_seed_420', 'squeezed_one_site_D_total_32_full_size_cross_entropy_loss_seed_420',  'squeezed_one_site_D_total_32_full_size_stoudenmire_loss_seed_420', 'squeezed_one_site_D_total_32_full_size_abs_stoudenmire_loss_seed_420']
+    different_names = ['abs_mse', 'mse', 'cross_entropy', 'abs_stoud', 'stoud']
+
+    results_og = []
+    results_ortho = []
+    for c in different_classifiers:
+        og, orth = svd_classifier(c, mps_images, bitstrings, labels)
+        results_og.append(og)
+        results_ortho.append(orth)
+
+
+
+    fig, ax1 = plt.subplots()
+
+    #ax1.axhline(0.95, linestyle = 'dashed', color = 'grey', label = 'Stoudenmire: D=10')
+    #legend_1 = ax1.legend(loc = 'lower right')
+    #legend_1.remove()
+    ax1.grid(zorder=0. ,alpha = 0.4)
+    ax1.set_xlabel("Cost Function", labelpad = 10)
+    ax1.set_ylabel("Top 1- Training Accuracy")#, color = 'C0')
+    ax1.bar(np.arange(len(results_og)) - 0.2 ,results_og, 0.4, color = 'C0', label = 'Non-orthogonal',zorder = 3)
+    ax1.bar(np.arange(len(results_ortho)) + 0.2 ,results_ortho, 0.4, color = 'C1', label = 'Orthogonal', zorder = 3)
+
+    legend_1 = ax1.legend(loc = 'lower right')
+
+    #ax1.tick_params(axis="y", labelcolor='C0')
+    #ax1.set_xlim([1.75,10.25])
+    ax1.set_yticks(np.arange(0.1, 1.1, 0.1))
+    #ax1.set_xticks(np.arange(2, 11, 1) )
+
+    ax1.set_xticks(np.arange(0,len(results_og),1))
+    #ax1.set_xticklabels(different_names[:len(results_og)])
+
+    ax1.set_xticklabels(different_names)
+    plt.savefig('different_cost_functions_top_1.pdf')
+
+    plt.show()
+
+
 if __name__ == "__main__":
 
     num_samples = 1000
@@ -406,8 +452,13 @@ if __name__ == "__main__":
     )
     mps_images, labels = data
 
-    #svd_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs', mps_images, bitstrings, labels)
 
+
+    plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
+
+
+
+    assert()
     #classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
 
 
