@@ -47,7 +47,6 @@ one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
 )
 
 
-
 quimb_hairy_bitstrings = bitstring_data_to_QTN(
     hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
 )
@@ -89,6 +88,7 @@ print(mpo_classifier.squeeze())
 #Classifier
 mpo_classifier_squeezed = mpo_classifier.squeeze()
 """
+
 
 def test_create_hairy_bitstrings_data():
 
@@ -335,7 +335,12 @@ def test_batch_adding_mpos():
 def test_loss_functions():
 
     # Check loss is -1.0 between same image as mps image and mpo classifier
-    truncated_mpo_train = [i.squeeze() for i in mpo_encoding(mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings)]
+    truncated_mpo_train = [
+        i.squeeze()
+        for i in mpo_encoding(
+            mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
+        )
+    ]
 
     digit = truncated_mpo_train[0]
 
@@ -343,80 +348,150 @@ def test_loss_functions():
     mps_images = [mps_train[0].squeeze() for _ in range(10)]
     train_label = [y_train[0] for _ in range(10)]
 
-    squeezed_bitstrings = [i.squeeze() for i in truncated_one_site_quimb_hairy_bitstrings]
+    squeezed_bitstrings = [
+        i.squeeze() for i in truncated_one_site_quimb_hairy_bitstrings
+    ]
 
-    #Green Loss
+    # Green Loss
     loss = green_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == -1.0
 
-    #Abs Green Loss
+    # Abs Green Loss
     loss = abs_green_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == -1.0
 
-    #MSE Loss
+    # MSE Loss
     loss = mse_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == 0.0
 
-    #Abs MSE Loss
+    # Abs MSE Loss
     loss = abs_mse_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == 0.0
 
-    #Cross Entropy Loss
+    # Cross Entropy Loss
     loss = cross_entropy_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == 0.0
 
-    #Stoudenmire Loss
+    # Stoudenmire Loss
     loss = stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == 0.0
 
-    #Abs stoudenmire Loss
+    # Abs stoudenmire Loss
     loss = abs_stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == 0.0
 
-
     # Check loss between images and randomly initialised mpo classifier
     # All overlaps should be roughly equal. To a degree!
-    squeezed_mpo_classifier = create_mpo_classifier(mpo_encoding(mps_train, y_train, truncated_quimb_hairy_bitstrings)).squeeze()
+    squeezed_mpo_classifier = create_mpo_classifier(
+        mpo_encoding(mps_train, y_train, truncated_quimb_hairy_bitstrings)
+    ).squeeze()
     squeezed_images = [i.squeeze() for i in mps_train][:10]
     squeezed_bitstrings = [i.squeeze() for i in truncated_quimb_hairy_bitstrings]
 
-    #Green Loss
-    loss = green_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
-    overlap = -(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]]))**2
-    assert(np.isclose(loss, overlap, atol = 1e-03))
+    # Green Loss
+    loss = green_loss(
+        squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
+    )
+    overlap = -(
+        (
+            squeezed_images[0].H
+            @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])
+        )
+        ** 2
+    )
+    assert np.isclose(loss, overlap, atol=1e-03)
 
-    #Abs Green Loss
-    loss = abs_green_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
-    overlap = -abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]]))**2
-    assert(np.isclose(loss, overlap, atol = 1e-03))
+    # Abs Green Loss
+    loss = abs_green_loss(
+        squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
+    )
+    overlap = (
+        -abs(
+            squeezed_images[0].H
+            @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])
+        )
+        ** 2
+    )
+    assert np.isclose(loss, overlap, atol=1e-03)
 
-    #MSE Loss
-    loss = mse_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
-    overlap = ((squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - 1) ** 2
-    assert(np.isclose(loss, overlap, atol = 1e-01))
+    # MSE Loss
+    loss = mse_loss(
+        squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
+    )
+    overlap = (
+        (
+            squeezed_images[0].H
+            @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])
+        )
+        - 1
+    ) ** 2
+    assert np.isclose(loss, overlap, atol=1e-01)
 
-    #Abs MSE Loss
-    loss = abs_mse_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
-    overlap = (abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - 1) ** 2
-    assert(np.isclose(loss, overlap, atol = 1e-01))
+    # Abs MSE Loss
+    loss = abs_mse_loss(
+        squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
+    )
+    overlap = (
+        abs(
+            squeezed_images[0].H
+            @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])
+        )
+        - 1
+    ) ** 2
+    assert np.isclose(loss, overlap, atol=1e-01)
 
-    #Cross Entropy Loss
-    #Variance is higher than usual with this one. Just check both numbers are of same order
-    loss = cross_entropy_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
-    overlap = anp.log(abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])))
-    assert( (int(np.log(abs(loss))) + 1) == (int(np.log(abs(overlap))) + 1) )
+    # Cross Entropy Loss
+    # Variance is higher than usual with this one. Just check both numbers are of same order
+    loss = cross_entropy_loss(
+        squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
+    )
+    overlap = anp.log(
+        abs(
+            squeezed_images[0].H
+            @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])
+        )
+    )
+    assert (int(np.log(abs(loss))) + 1) == (int(np.log(abs(overlap))) + 1)
 
-    #Stoudenmire Loss
-    loss = stoudenmire_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    # Stoudenmire Loss
+    loss = stoudenmire_loss(
+        squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
+    )
     mini_possible_labels = list(set(y_train[:10]))
-    overlap = np.sum([(anp.real(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - int(y_train[0] == label))**2 for label in mini_possible_labels])
-    assert(np.isclose(loss, overlap, atol = 1e-01))
+    overlap = np.sum(
+        [
+            (
+                anp.real(
+                    squeezed_images[0].H
+                    @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])
+                )
+                - int(y_train[0] == label)
+            )
+            ** 2
+            for label in mini_possible_labels
+        ]
+    )
+    assert np.isclose(loss, overlap, atol=1e-01)
 
-    #Abs Stoudenmire Loss
-    loss = abs_stoudenmire_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+    # Abs Stoudenmire Loss
+    loss = abs_stoudenmire_loss(
+        squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
+    )
     mini_possible_labels = list(set(y_train[:10]))
-    overlap = np.sum([(abs(squeezed_images[0].H @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])) - int(y_train[0] == label))**2 for label in mini_possible_labels])
-    assert(np.isclose(loss, overlap, atol = 1e-01))
+    overlap = np.sum(
+        [
+            (
+                abs(
+                    squeezed_images[0].H
+                    @ (squeezed_mpo_classifier @ squeezed_bitstrings[y_train[0]])
+                )
+                - int(y_train[0] == label)
+            )
+            ** 2
+            for label in mini_possible_labels
+        ]
+    )
+    assert np.isclose(loss, overlap, atol=1e-01)
 
 
 def test_classifier_predictions():

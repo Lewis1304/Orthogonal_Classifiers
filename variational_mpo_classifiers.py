@@ -128,7 +128,7 @@ Create Random Classifier
 """
 
 
-def create_mpo_classifier(mpo_train, seed=None, full_sized = False):
+def create_mpo_classifier(mpo_train, seed=None, full_sized=False):
 
     n_sites = mpo_train[0].num_tensors
     # Create MPO classifier
@@ -310,38 +310,83 @@ def initialise_sequential_mpo_classifier(train_data, train_labels, D_total):
 Train Classifier
 """
 
+
 def green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))**2  for i in range(len(mps_train))]
+    overlaps = [
+        anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) ** 2
+        for i in range(len(mps_train))
+    ]
     return -np.sum(overlaps) / len(mps_train)
+
 
 def abs_green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))**2  for i in range(len(mps_train))]
+    overlaps = [
+        abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) ** 2
+        for i in range(len(mps_train))
+    ]
     return -np.sum(overlaps) / len(mps_train)
+
 
 def mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [(anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - 1)**2  for i in range(len(mps_train))]
+    overlaps = [
+        (anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - 1)
+        ** 2
+        for i in range(len(mps_train))
+    ]
     return np.sum(overlaps) / len(mps_train)
+
 
 def abs_mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - 1)**2  for i in range(len(mps_train))]
+    overlaps = [
+        (abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - 1) ** 2
+        for i in range(len(mps_train))
+    ]
     return np.sum(overlaps) / len(mps_train)
 
+
 def cross_entropy_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
-    overlaps = [anp.log(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))) for i in range(len(mps_train))]
+    overlaps = [
+        anp.log(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])))
+        for i in range(len(mps_train))
+    ]
     return -np.sum(overlaps) / len(mps_train)
+
 
 def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     possible_labels = list(set(y_train))
-    overlaps = [[(anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
+    overlaps = [
+        [
+            (
+                anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))
+                - int(y_train[i] == label)
+            )
+            ** 2
+            for label in possible_labels
+        ]
+        for i in range(len(mps_train))
+    ]
     return np.sum(overlaps) / len(mps_train)
+
 
 def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     possible_labels = list(set(y_train))
-    overlaps = [[(abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]])) - int(y_train[i] == label))**2 for label in possible_labels] for i in range(len(mps_train))]
+    overlaps = [
+        [
+            (
+                abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))
+                - int(y_train[i] == label)
+            )
+            ** 2
+            for label in possible_labels
+        ]
+        for i in range(len(mps_train))
+    ]
     return np.sum(overlaps) / len(mps_train)
+
 
 def normalize_tn(tn):
     return tn / (tn.H @ tn) ** 0.5
+
 
 def orthogonalise_and_normalize(tn):
     tn = compress_QTN(tn, D=None, orthogonalise=True)
@@ -360,6 +405,7 @@ def classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings):
         for test_image in mps_test
     ]
     return predictions
+
 
 def squeezed_classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings):
     # assumes mps_test is aligned with appropiate labels, y_test
