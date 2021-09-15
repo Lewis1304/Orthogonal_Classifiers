@@ -9,7 +9,6 @@ Experiments
 def initialise_experiment(
     n_samples,
     D_total,
-    padded=False,
     truncated=False,
     one_site=False,
     initialise_classifier=False,
@@ -49,16 +48,7 @@ def initialise_experiment(
     if initialise_classifier:
         mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
     else:
-        mpo_classifier = create_mpo_classifier(mpo_train, seed = 420)
-
-    if padded:
-        hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
-            possible_labels, n_hairysites, n_sites
-        )
-        q_hairy_bitstrings = [
-            bitstring_data_to_QTN(padding)
-            for padding in hairy_bitstrings_data_padded_data
-        ]
+        mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
 
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
 
@@ -240,7 +230,7 @@ def all_classes_experiment(
     predict_func,
     loss_func,
     title,
-    squeezed = False,
+    squeezed=False,
     ortho_inbetween=False,
 ):
     print(title)
@@ -267,6 +257,7 @@ def all_classes_experiment(
             optimizer="nadam",  # supplied to scipy.minimize
         )
         return optmzr
+
     print(classifier_opt)
     print(q_hairy_bitstrings[0])
     for i in range(1000):
@@ -330,39 +321,41 @@ def sequential_mpo_classifier_experiment():
 
     return classifier, result
 
+
 def svd_classifier(dir, mps_images, bitstrings, labels):
 
     classifier_og = load_qtn_classifier(dir)
-    #print('Original Classifier:', classifier_og)
+    # print('Original Classifier:', classifier_og)
 
     predictions_og = classifier_predictions(classifier_og, mps_images, bitstrings)
     og_acc = evaluate_classifier_top_k_accuracy(predictions_og, labels, 1)
-    print('Original Classifier Accuracy:', og_acc)
-    #print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
+    print("Original Classifier Accuracy:", og_acc)
+    # print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
 
     """
     Shifted, but not orthogonalised
     """
     classifier_shifted = compress_QTN(classifier_og, None, False)
-    #print(classifier_shifted)
+    # print(classifier_shifted)
 
-    #predictions_shifted = classifier_predictions(classifier_shifted, mps_images, bitstrings)
-    #shifted_acc = evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 1)
-    #print('Shifted Classifier Accuracy:', shifted_acc)
-    #print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
+    # predictions_shifted = classifier_predictions(classifier_shifted, mps_images, bitstrings)
+    # shifted_acc = evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 1)
+    # print('Shifted Classifier Accuracy:', shifted_acc)
+    # print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
 
     """
     Shifted, and orthogonalised
     """
     classifier_ortho = compress_QTN(classifier_og, None, True)
-    #print(classifier_ortho)
+    # print(classifier_ortho)
 
     predictions_ortho = classifier_predictions(classifier_ortho, mps_images, bitstrings)
     ortho_acc = evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 1)
-    print('Orthogonalised Classifier Accuracy:', ortho_acc)
-    #print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
+    print("Orthogonalised Classifier Accuracy:", ortho_acc)
+    # print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
 
     return og_acc, ortho_acc
+
 
 """
 Results
@@ -398,8 +391,14 @@ def plot_results(results, title):
 
 def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
 
-    different_classifiers = ['squeezed_one_site_D_total_32_full_size_abs_mse_loss_seed_420','squeezed_one_site_D_total_32_full_size_mse_loss_seed_420', 'squeezed_one_site_D_total_32_full_size_cross_entropy_loss_seed_420',  'squeezed_one_site_D_total_32_full_size_stoudenmire_loss_seed_420', 'squeezed_one_site_D_total_32_full_size_abs_stoudenmire_loss_seed_420']
-    different_names = ['abs_mse', 'mse', 'cross_entropy', 'abs_stoud', 'stoud']
+    different_classifiers = [
+        "squeezed_one_site_D_total_32_full_size_abs_mse_loss_seed_420",
+        "squeezed_one_site_D_total_32_full_size_mse_loss_seed_420",
+        "squeezed_one_site_D_total_32_full_size_cross_entropy_loss_seed_420",
+        "squeezed_one_site_D_total_32_full_size_stoudenmire_loss_seed_420",
+        "squeezed_one_site_D_total_32_full_size_abs_stoudenmire_loss_seed_420",
+    ]
+    different_names = ["abs_mse", "mse", "cross_entropy", "abs_stoud", "stoud"]
 
     results_og = []
     results_ortho = []
@@ -408,31 +407,43 @@ def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
         results_og.append(og)
         results_ortho.append(orth)
 
-
-
     fig, ax1 = plt.subplots()
 
-    #ax1.axhline(0.95, linestyle = 'dashed', color = 'grey', label = 'Stoudenmire: D=10')
-    #legend_1 = ax1.legend(loc = 'lower right')
-    #legend_1.remove()
-    ax1.grid(zorder=0. ,alpha = 0.4)
-    ax1.set_xlabel("Cost Function", labelpad = 10)
-    ax1.set_ylabel("Top 1- Training Accuracy")#, color = 'C0')
-    ax1.bar(np.arange(len(results_og)) - 0.2 ,results_og, 0.4, color = 'C0', label = 'Non-orthogonal',zorder = 3)
-    ax1.bar(np.arange(len(results_ortho)) + 0.2 ,results_ortho, 0.4, color = 'C1', label = 'Orthogonal', zorder = 3)
+    # ax1.axhline(0.95, linestyle = 'dashed', color = 'grey', label = 'Stoudenmire: D=10')
+    # legend_1 = ax1.legend(loc = 'lower right')
+    # legend_1.remove()
+    ax1.grid(zorder=0.0, alpha=0.4)
+    ax1.set_xlabel("Cost Function", labelpad=10)
+    ax1.set_ylabel("Top 1- Training Accuracy")  # , color = 'C0')
+    ax1.bar(
+        np.arange(len(results_og)) - 0.2,
+        results_og,
+        0.4,
+        color="C0",
+        label="Non-orthogonal",
+        zorder=3,
+    )
+    ax1.bar(
+        np.arange(len(results_ortho)) + 0.2,
+        results_ortho,
+        0.4,
+        color="C1",
+        label="Orthogonal",
+        zorder=3,
+    )
 
-    legend_1 = ax1.legend(loc = 'lower right')
+    legend_1 = ax1.legend(loc="lower right")
 
-    #ax1.tick_params(axis="y", labelcolor='C0')
-    #ax1.set_xlim([1.75,10.25])
+    # ax1.tick_params(axis="y", labelcolor='C0')
+    # ax1.set_xlim([1.75,10.25])
     ax1.set_yticks(np.arange(0.1, 1.1, 0.1))
-    #ax1.set_xticks(np.arange(2, 11, 1) )
+    # ax1.set_xticks(np.arange(2, 11, 1) )
 
-    ax1.set_xticks(np.arange(0,len(results_og),1))
-    #ax1.set_xticklabels(different_names[:len(results_og)])
+    ax1.set_xticks(np.arange(0, len(results_og), 1))
+    # ax1.set_xticklabels(different_names[:len(results_og)])
 
     ax1.set_xticklabels(different_names)
-    plt.savefig('different_cost_functions_top_1.pdf')
+    plt.savefig("different_cost_functions_top_1.pdf")
 
     plt.show()
 
@@ -445,22 +456,14 @@ if __name__ == "__main__":
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
         D_total,
-        padded=False,
         truncated=True,
         one_site=True,
         initialise_classifier=False,
     )
     mps_images, labels = data
 
-
-
-    plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
-
-
-
-    assert()
-    #classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
-
+    # plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
+    # classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
 
     all_classes_experiment(
         classifier,
@@ -470,4 +473,5 @@ if __name__ == "__main__":
         squeezed_classifier_predictions,
         squeezed_stoundenmire_loss,
         "squeezed_one_site_D_total_32_stoudenmire_loss_seed_420",
-        squeezed = True)
+        squeezed=True,
+    )

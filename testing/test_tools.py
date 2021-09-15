@@ -45,10 +45,6 @@ one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites, one_site=True
 )
 
-# Only do 2 paddings  (for speed)
-hairy_bitstrings_data_padded_data = create_padded_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites
-)[:2]
 
 quimb_hairy_bitstrings = bitstring_data_to_QTN(
     hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
@@ -62,10 +58,7 @@ one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
 truncated_one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
     one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
 )
-quimb_padded_hairy_bitstrings = [
-    bitstring_data_to_QTN(padding, n_hairysites, n_sites)
-    for padding in hairy_bitstrings_data_padded_data
-]
+
 
 fmps_images = [image_to_mps(image, D_total) for image in x_train]
 
@@ -76,11 +69,6 @@ mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
 
 predictions = np.array(
     classifier_predictions(mpo_classifier, mps_train, quimb_hairy_bitstrings)
-)
-padded_predictions = np.array(
-    padded_classifier_predictions(
-        mpo_classifier, mps_train, quimb_padded_hairy_bitstrings
-    )
 )
 
 
@@ -153,36 +141,6 @@ def test_bitstring_data_to_QTN():
                 assert np.isclose((a @ b), 1)
             else:
                 assert np.isclose((a @ b).norm(), 0)
-
-    # Check the same for padded bitstrings
-
-    # Check whether all paddings are represented
-    # Only doing two paddings
-    assert len(quimb_padded_hairy_bitstrings) == 2
-
-    # Check whether all labels are converted to quimb_tensors
-    for k in quimb_padded_hairy_bitstrings:
-        assert len(k) == len(possible_labels)
-
-    # Check data isn't altered when converted to quimb tensor
-    # This checks shape and data
-    # Check just for one class, and 2 paddings
-    for k in range(len(quimb_padded_hairy_bitstrings[:2])):
-        for a, b in zip(
-            hairy_bitstrings_data_padded_data[k][-1],
-            quimb_padded_hairy_bitstrings[k][-1],
-        ):
-            assert np.array_equal(a, b.data.squeeze())
-
-    # Check bitstrings are orthonormal
-    # Check just for one class.
-    for i, a in enumerate(quimb_padded_hairy_bitstrings[:2]):
-        for j, b in enumerate(quimb_padded_hairy_bitstrings[:2]):
-            if i == j:
-                # If 1, quimb automatically changes from tensor to int
-                assert np.isclose((a[-1] @ b[-1]), 1)
-            else:
-                assert np.isclose((a[-1] @ b[-1]).norm(), 0)
 
     # Check if label encoding is correct.
     # Each hairy site has 2 qubits i.e. dim(s) == 2**2.
@@ -455,8 +413,10 @@ def test_QTN_to_fMPO_and_back():
 
 
 def test_save_and_load_qtn_classifier():
+    # Test non-squeezed classifier
     save_qtn_classifier(mpo_classifier, "pytest")
     loaded_classifier = load_qtn_classifier("pytest")
+
     assert np.array(
         [
             np.array_equal(x.data, y.data)
@@ -464,6 +424,46 @@ def test_save_and_load_qtn_classifier():
         ]
     ).all()
 
+    # Test squeezed classifier loading (not truncated)
+    squeezed_classifier = mpo_classifier.squeeze()
+    save_qtn_classifier(squeezed_classifier, "pytest_squeezed")
+    # loading automatically pads classifier
+    loaded_squeezed_classifier = load_qtn_classifier("pytest_squeezed")
+
+    assert np.array(
+        [
+            np.array_equal(x.data, y.data)
+            for x, y in zip(mpo_classifier.tensors, loaded_squeezed_classifier.tensors)
+        ]
+    ).all()
+
+    # Test squeezed classifier loading (truncated)
+    truncated_mpo_train = mpo_encoding(
+        mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
+    )
+
+    truncated_mpo_classifier = create_mpo_classifier(
+        truncated_mpo_train, seed=420
+    ).squeeze()
+
+    save_qtn_classifier(truncated_mpo_classifier, "pytest_squeezed_truncated")
+    loaded_squeezed_truncated_classifier = load_qtn_classifier(
+        "pytest_squeezed_truncated"
+    )
+
+    truncated_mpo_classifier = create_mpo_classifier(truncated_mpo_train, seed=420)
+
+    assert np.array(
+        [
+            np.array_equal(x.data, y.data)
+            for x, y in zip(
+                truncated_mpo_classifier.tensors,
+                loaded_squeezed_truncated_classifier.tensors,
+            )
+        ]
+    ).all()
+
 
 if __name__ == "__main__":
-    test_bitstring_data_to_QTN()
+    # test_bitstring_data_to_QTN()
+    test_save_and_load_qtn_classifier()
