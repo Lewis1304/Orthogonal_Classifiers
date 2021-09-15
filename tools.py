@@ -195,10 +195,22 @@ def load_qtn_classifier(dir):
     files = os.listdir("Classifiers/" + dir)
     num_files = len(files)
 
-    data = [
-        np.load("Classifiers/" + dir + f"/site_{i}.npy", allow_pickle=True)
-        for i in range(num_files)
-    ]
+    data = []
+
+    for i in range(num_files):
+
+        site = np.load("Classifiers/" + dir + f"/site_{i}.npy", allow_pickle=True)
+        if i == 0:
+            if len(site.shape) != 4:
+                site = np.expand_dims(np.expand_dims(site, 1), 1)
+        elif i == num_files - 1:
+            if len(site.shape) != 4:
+                site = np.expand_dims(site, -1)
+        else:
+            if len(site.shape) != 4:
+                site = np.expand_dims(site, 1)
+        data.append(site)
+
     return data_to_QTN(data)
 
 
