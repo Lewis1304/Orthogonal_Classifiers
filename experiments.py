@@ -1,4 +1,5 @@
 from variational_mpo_classifiers import *
+from deterministic_mpo_classifier import prepare_batched_classifier
 import os
 
 """
@@ -12,13 +13,23 @@ def initialise_experiment(
     truncated=False,
     one_site=False,
     initialise_classifier=False,
+    initialise_classifier_settings = (10, False, False)
 ):
     """
     param: n_samples: Number of data samples (total)
     param: D_total: Bond dimension of classifier and data
     """
+    #Load & Organise Data
+    x_train, y_train, x_test, y_test = load_data(n_samples, shuffle = False, equal_numbers = True)
 
-    x_train, y_train, x_test, y_test = load_data(n_samples)
+    possible_labels = list(set(y_train))
+
+    x_train = [[x_train[i] for i in range(k, len(x_train), len(possible_labels))] for k in possible_labels]
+    x_train = np.array([image for label in x_train for image in label])
+
+    y_train = [[y_train[i] for i in range(k, len(y_train), len(possible_labels))] for k in possible_labels]
+    y_train = np.array([image for label in y_train for image in label])
+
 
     # All possible class labels
     possible_labels = list(set(y_train))
@@ -34,20 +45,25 @@ def initialise_experiment(
     q_hairy_bitstrings = bitstring_data_to_QTN(
         hairy_bitstrings_data, n_hairysites, n_sites, truncated=truncated
     )
-    # q_hairy_bitstrings[0].draw(show_inds = False, show_tags = False)
 
     # MPS encode data
     mps_train = mps_encoding(x_train, D_total)
 
-    # MPO encode data (already encoded as mps)
-    # Has shape: # classes, mpo.shape
-    mpo_train = mpo_encoding(mps_train, y_train, q_hairy_bitstrings)
-    # mpo_train[0].draw(show_inds = False, show_tags = False)
-
     # Initial Classifier
     if initialise_classifier:
-        mpo_classifier = initialise_sequential_mpo_classifier(x_train, y_train, D_total)
+        batch_num, one_site_adding, ortho_at_end  = initialise_classifier_settings
+        fmpo_classifier = prepare_batched_classifier(x_train, y_train, D_total, batch_num, one_site = one_site_adding)
+        if one_site:
+            #Works for n_sites != 1. End result is a classifier with n_site = 1.
+            classifier_data = fmpo_classifier.compress_one_site(D=D_total, orthogonalise=ortho_at_end)
+            mpo_classifier = data_to_QTN(classifier_data.data)
+        else:
+            classifier_data = fmpo_classifier.compress(D=D_total, orthogonalise=ortho_at_end)
+            mpo_classifier = data_to_QTN(classifier_data.data)
     else:
+        # MPO encode data (already encoded as mps)
+        # Has shape: # classes, mpo.shape
+        mpo_train = mpo_encoding(mps_train, y_train, q_hairy_bitstrings)
         mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
 
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
@@ -244,7 +260,7 @@ def all_classes_experiment(
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
-    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 3)]
+    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 1)]
     # variances = [evaluate_prediction_variance(initial_predictions)]
     losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
 
@@ -278,48 +294,6 @@ def all_classes_experiment(
         save_qtn_classifier(classifier_opt, title)
 
     return accuracies, losses
-
-
-def sequential_mpo_classifier_experiment():
-    n_samples = 1000
-    possible_labels = list(range(10))
-
-    # train_data, train_labels, test_data, test_labels = tn_classifiers().gather_data_mnist(n_samples, 1, 1, shuffle=True, equal_classes=False)
-
-    train_data, train_labels, test_data, test_labels = load_data(n_samples)
-
-    grouped_images = [
-        [train_data[i] for i in range(n_samples) if train_labels[i] == label]
-        for label in possible_labels
-    ]
-
-    train_data = [images for images in zip(*grouped_images)]
-    train_labels = [possible_labels for _ in train_data]
-
-    train_data = np.array([item for sublist in train_data for item in sublist])
-    train_labels = np.array([item for sublist in train_labels for item in sublist])
-
-    train_spread_mpo_product_states = mps_encoded_data(
-        train_data, train_labels, D_total
-    )
-    mpo_classifier = sequential_mpo_classifier(
-        train_labels=train_labels, mps_images=train_spread_mpo_product_states
-    )
-
-    train_spread_mpo_product_states = [
-        image for label in train_spread_mpo_product_states.values() for image in label
-    ]
-
-    MPOs = train_spread_mpo_product_states
-    while len(MPOs) > 1:
-        MPOs = mpo_classifier.adding_batches(MPOs, D_total, 10, orthogonalise=False)
-    classifier = MPOs[0].left_spread_canonicalise(D=D_total, orthogonalise=False)
-
-    result = mpo_classifier.evaluate_classifiers(
-        classifier, train_data, train_labels, mps_encode=True, D=D_total
-    )
-
-    return classifier, result
 
 
 def svd_classifier(dir, mps_images, bitstrings, labels):
@@ -457,9 +431,12 @@ if __name__ == "__main__":
         num_samples,
         D_total,
         truncated=True,
-        one_site=True,
-        initialise_classifier=False,
+        one_site=False,
+        initialise_classifier=True,
+        initialise_classifier_settings = (10, False, False)
+
     )
+
     mps_images, labels = data
 
     # plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
@@ -471,7 +448,7 @@ if __name__ == "__main__":
         bitstrings,
         labels,
         squeezed_classifier_predictions,
-        squeezed_stoundenmire_loss,
-        "squeezed_one_site_D_total_32_stoudenmire_loss_seed_420",
+        abs_stoudenmire_loss,
+        "TEST",
         squeezed=True,
     )

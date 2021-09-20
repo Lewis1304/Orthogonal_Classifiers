@@ -3,93 +3,28 @@ from functools import reduce
 from xmps.fMPS import fMPS
 from tqdm import tqdm
 from fMPO_reduced import fMPO
-
+from tools import load_data, data_to_QTN
+from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, mps_encoding, create_hairy_bitstrings_data, bitstring_data_to_QTN, squeezed_classifier_predictions, mpo_encoding
+from math import log as mlog
 """
 Load Data
 """
 
-def gather_data_mnist(n_train=10,n_test=2,size=1,shuffle=True,equal_classes = False):
+def prepare_data(n_samples, x_train, y_train, x_test, y_test):
 
-    def load_mnist():
-        try:
-            import idx2numpy as idn
-        except ImportError:
-            print('idx2numpy not installed. Try pip install idx2numpy')
-        data = idn.convert_from_file(open('data/MNIST/t10k-images-idx3-ubyte', 'rb'))
-        labels = idn.convert_from_file(
-            open('data/MNIST/t10k-labels-idx1-ubyte', 'rb'))
-        return data/255, labels  # (10000, 28, 28), (10000,)
+    n_samples_per_class = n_samples // len(list(set(y_train)))
+    grouped_x_train = [x_train[y_train == label][:n_samples_per_class] for label in list(set(y_train))]
+    grouped_x_test = [x_test[y_test == label][:n_samples_per_class] for label in list(set(y_test))]
 
-    def average_image(image, window_width, window_height=None):
-        """average_image: block average an image
+    train_data = np.array([images for images in zip(*grouped_x_train)])
+    train_labels = [list(set(y_train)) for _ in train_data]
+    test_data = np.array([images for images in zip(*grouped_x_test)])
+    test_labels = [list(set(y_test)) for _ in range(len(test_data))]
 
-        :param image: image data
-        :param window_width: how many horizonal pixels to average
-        :param window_height: optional - if None, use window_width
-        """
-        window_height = window_height if window_height is not None else window_width
-        width, height = image.shape
-        new_width, new_height = int(width/window_width), int(height/window_height)
-        new_image = np.zeros((new_width, new_height))
-        for j in range(new_height):
-            for i in range(new_width):
-                window = image[window_width*i:window_width *
-                               (i+1), window_height*j: window_height*(j+1)]
-                new_image[i, j] = np.mean(window)
-        return new_image
-
-    # n_train: Number of training images per digit
-    # n_test: Number of test images per digit
-    data, labels = load_mnist()
-    possible_labels = list(set(labels))
-
-    if shuffle:
-        randomize = np.arange(len(data))
-        np.random.shuffle(randomize)
-        data = data[randomize]
-        labels = labels[randomize]
-
-
-    data = np.array([data[labels == label][:n_train+n_test] for label in possible_labels]).reshape(-1,28,28)
-
-    N,x,y = data.shape
-    labels = np.array([[label]*(n_train+n_test) for label in possible_labels]).reshape(-1)
-    #List of images
-    train_data = np.array([data[labels == label][:n_train] for label in possible_labels]).reshape(-1,x,y)
-
-    #Blockwise average
-    train_data = np.array([average_image(i,size) for i in train_data])
-
-    #Flatten as snake
-    train_data = np.array([np.array([i[::(-1)**k] for k,i in enumerate(j)]).reshape(-1) for j in train_data])
-    train_labels = np.array([[label]*n_train for label in possible_labels]).reshape(-1)
-
-    test_data =  np.array([data[labels == label][n_train:n_train + n_test] for label in possible_labels]).reshape(-1,x,y)
-    test_data = np.array([average_image(i,size) for i in test_data])
-    test_data = np.array([np.array([i[::(-1)**k] for k,i in enumerate(j)]).reshape(-1) for j in test_data])
-    test_labels = np.array([[label]*n_test for label in possible_labels]).reshape(-1)
-
-    if equal_classes:
-        sorted_images = [[train_data[i] for i in range(len(train_data)) if train_labels[i] == label] for label in possible_labels]
-        sorted_labels = [[train_labels[i] for i in range(len(train_labels)) if train_labels[i] == label] for label in possible_labels]
-
-        equalised_data = []
-        equalised_labels = []
-
-        for j in range(n_train):
-            group_data = []
-            group_labels = []
-            for i in range(len(sorted_images)):
-                group_data.append(sorted_images[i][j])
-                group_labels.append(sorted_labels[i][j])
-
-            equalised_data.append(group_data)
-            equalised_labels.append(group_labels)
-
-        equalised_data = np.array([item for sublist in equalised_data for item in sublist])
-        equalised_labels = np.array([item for sublist in equalised_labels for item in sublist])
-
-        return equalised_data, equalised_labels, test_data, test_labels
+    train_data = np.array([item for sublist in train_data for item in sublist])
+    train_labels = np.array([item for sublist in train_labels for item in sublist])
+    test_data = np.array([item for sublist in test_data for item in sublist])
+    test_labels = np.array([item for sublist in test_labels for item in sublist])
 
     return train_data,train_labels,test_data,test_labels
 
@@ -97,7 +32,7 @@ def gather_data_mnist(n_train=10,n_test=2,size=1,shuffle=True,equal_classes = Fa
 Encode Data
 """
 
-def mps_encoding(images, D=2):
+def fmps_encoding(images, D=2):
 
     def image_to_mps(f_image, D):
         num_pixels = f_image.shape[0]
@@ -163,7 +98,7 @@ def mpo_encoded_data(train_data, train_labels, D, one_site = True):
     else:
         n_hairy_sites = 1
 
-    train_mps = [mps_encoding(train_data[train_labels == label], D=D) for label in possible_labels]
+    train_mps = [fmps_encoding(train_data[train_labels == label], D=D) for label in possible_labels]
 
     b = spread_ditstring(n_hairy_sites, possible_labels, n_features, truncate=False, one_site = one_site)
 
@@ -197,7 +132,6 @@ def add_sublist(*args):
 
     for i in range(1,N):
         c = c.add(sub_list_mpos[i])
-
     if c.data[-2].shape[1] == 1:
         return c.compress_one_site(B_D, orthogonalise=ortho)
     return c.compress(B_D, orthogonalise=ortho)
@@ -224,72 +158,131 @@ def adding_batches(list,D,batch_num=2,truncate=True, orthogonalise = False):
 Evaluate classifier
 """
 
-def classify(classifiers, test_data, test_labels, D, one_site = False):
-    possible_labels = list(set(test_labels))
-    n_features = int(np.log2(len(test_data[0]))) + 1
+def deterministic_classifier_predictions(classifier, mps_test, bitstrings):
+    def mpo_overlap(classifier, bitstring, test_datum):
+        return np.abs(classifier.apply_mpo_from_bottom(bitstring).overlap(test_datum))
 
-    if not one_site:
-        n_hairy_sites = int((int(np.log2(len(possible_labels)))+1)/2)
-    else:
-        n_hairy_sites = 1
+    return np.array([[mpo_overlap(classifier,i,j) for i in bitstrings] for j in (mps_test)])
 
-    def mpo_overlap(classifiers, bitstring, test_datum, n_train = 10):
-        return np.abs(classifiers.apply_mpo_from_bottom(bitstring).overlap(test_datum))
+"""
+Prepare classifier
+"""
 
-    labels = np.array(possible_labels)
+def prepare_batched_classifier(train_data, train_labels, D_total, batch_num, one_site = False, ortho_at_end = False):
 
-    list_spread_ditstrings = [fMPS().from_product_state(i) for i in spread_ditstring(n_hairy_sites, possible_labels, n_features, one_site = one_site)]
-    list_test_MPSs = mps_encoding(test_data, D=D)
+    possible_labels = list(set(train_labels))
+    n_hairy_sites = int(np.ceil(mlog(len(possible_labels), 4)))
+    n_sites = int(np.ceil(mlog(train_data.shape[-1], 2)))
 
-    return labels.take(np.argmax(np.array([[mpo_overlap(classifiers,i,j) for i in list_spread_ditstrings] for j in (list_test_MPSs)]), axis = 1))
+    #Encoding images as MPOs. The structure of the MPOs might be different
+    #To the variational MPO structure. This requires creating bitstrings
+    #again as well
+    mps_train = mps_encoding(train_data, D_total)
+    hairy_bitstrings_data = create_hairy_bitstrings_data(
+        possible_labels, n_hairy_sites, n_sites, one_site
+    )
+    q_hairy_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, n_hairy_sites, n_sites, truncated=True
+    )
+    train_mpos = mpo_encoding(mps_train, train_labels, q_hairy_bitstrings)
 
-def evaluate_classifiers(classifiers, test_data, test_labels,  D=2, one_site = False):
+    #Converting qMPOs into fMPOs
+    MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
 
-    def success_fraction(ar1, ar2):
-        assert len(ar1) == len(ar2)
-        average_result = np.sum((ar1 == ar2).astype(int))/len(ar1)
-        return average_result
+    #Adding fMPOs together
+    while len(MPOs) > 1:
+        MPOs = adding_batches(MPOs, D_total, batch_num, orthogonalise=False)
 
-    out_labels = classify(classifiers,test_data, test_labels, D, one_site)
-    sf = success_fraction(test_labels,out_labels)
-    return sf
+    return MPOs[0]
 
 """
 Experiment
 """
 
 def sequential_mpo_classifier_experiment():
-    n_samples = 10
+    #Results are different if shape one-site = True or False in batch adding procedure?
+    #Results are not different when compressing at the end.
+
+    n_samples = 1000
     possible_labels = list(range(10))
-    D_total = 32
-    batch_num = 2
+    #D_total = 32
     one_site = False
+    batch_num = 10
+    n_rounds = 10
 
-    train_data, train_labels, test_data, test_labels = gather_data_mnist(n_samples, 1, 1, shuffle=True, equal_classes=True)
+    if one_site:
+        n_hairy_sites = 1
+    else:
+        n_hairy_sites = int((int(np.log2(len(possible_labels)))+1)/2)
 
-    train_spread_mpo_product_states = mpo_encoded_data(train_data, train_labels, D_total, one_site = one_site)
-    train_spread_mpo_product_states = [image for label in train_spread_mpo_product_states.values() for image in label]
+    results_non_ortho = []
+    results_ortho = []
+    for _ in tqdm(range(n_rounds)):
+        for D_total in tqdm(range(2,42,2)):
 
-    MPOs = train_spread_mpo_product_states
-    while len(MPOs) > 1:
-        MPOs = adding_batches(MPOs, D_total, batch_num, orthogonalise=False)
+            #Load Data
+            x_train, y_train, x_test, y_test = load_data(60000, shuffle = True)
+            train_data, train_labels, test_data, test_labels = prepare_data(n_samples, x_train, y_train, x_test, y_test)
 
-    #one_site = True
-    #test1 = fMPO(MPOs[0].data)
-    #test2 = fMPO(MPOs[0].data)
-    for ortho_at_end in [False, True]:
-        if one_site:
-            classifier = MPOs[0].compress_one_site(D=D_total, orthogonalise=ortho_at_end)
-        else:
-            classifier = MPOs[0].compress(D=D_total, orthogonalise=ortho_at_end)
+            for ortho_at_end in [False, True]:
+                #Add/train classifier
+                classifier = prepare_batched_classifier(train_data, train_labels, D_total, batch_num, one_site = one_site, ortho_at_end = ortho_at_end)
 
-        result = evaluate_classifiers(classifier, train_data, train_labels, D=D_total, one_site = one_site)
-        #result2 = evaluate_classifiers(classifier2, train_data, train_labels, D=D_total, one_site = False)
-        #print(result1)
-        #print(result2)
-        print(result)
-        
-    return classifier, result
+                #Evaluate Classifier
+                n_features = int(np.log2(len(x_train[0]))) + 1
+                list_spread_ditstrings = [fMPS().from_product_state(i) for i in spread_ditstring(1, possible_labels, n_features, one_site = True)]
+                predicitions = deterministic_classifier_predictions(classifier, fmps_encoding(train_data, D=D_total), list_spread_ditstrings)
+                result = evaluate_classifier_top_k_accuracy(predicitions, train_labels, 1)
+
+                if not ortho_at_end:
+                    results_non_ortho.append(result)
+                else:
+                    results_ortho.append(result)
+
+    np.save('results_non_ortho', results_non_ortho)
+    np.save('results_ortho', results_ortho)
+
+
+def batch_initialise_classifier():
+    D_total = 32
+    n_train = 1000
+    one_site = False
+    ortho_at_end = False
+    batch_num = 10
+
+    #Load Data- ensuring particular order to be batched added
+    train_data, train_labels, test_data, test_labels = load_data(n_train, shuffle = False, equal_numbers = True)
+    possible_labels = list(set(train_labels))
+
+    train_data = [[train_data[i] for i in range(k, len(train_data), len(possible_labels))] for k in possible_labels]
+    train_data = np.array([image for label in train_data for image in label])
+
+    train_labels = [[train_labels[i] for i in range(k, len(train_labels), len(possible_labels))] for k in possible_labels]
+    train_labels = np.array([image for label in train_labels for image in label])
+
+    #Add images together- forming classifier initialisation
+    fMPO_classifier = prepare_batched_classifier(train_data, train_labels, D_total, batch_num, one_site = one_site)
+    qtn_classifier_data = fMPO_classifier.compress_one_site(D=D_total, orthogonalise=ortho_at_end)
+    qtn_classifier = data_to_QTN(qtn_classifier_data.data).squeeze()
+
+    #Evaluating Classifier
+    n_hairy_sites = 1
+    n_sites = 10
+    one_site = True
+    mps_train = mps_encoding(train_data, D_total)
+    mps_train = [i.squeeze() for i in mps_train]
+    hairy_bitstrings_data = create_hairy_bitstrings_data(
+        possible_labels, n_hairy_sites, n_sites, one_site
+    )
+    q_hairy_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, n_hairy_sites, n_sites, one_site
+    )
+    q_hairy_bitstrings = [i.squeeze() for i in q_hairy_bitstrings]
+
+    predictions = squeezed_classifier_predictions(qtn_classifier, mps_train, q_hairy_bitstrings)
+    print(evaluate_classifier_top_k_accuracy(predictions, train_labels, 1))
+
 
 if __name__ == '__main__':
-    sequential_mpo_classifier_experiment()
+    #sequential_mpo_classifier_experiment()
+    batch_initialise_classifier()
