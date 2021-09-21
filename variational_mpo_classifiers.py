@@ -27,7 +27,6 @@ from tools import *
 Encode Bitstrings
 """
 
-
 def create_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites, one_site=False
 ):
@@ -86,7 +85,6 @@ def create_hairy_bitstrings_data(
 MPS Encoding
 """
 
-
 def mps_encoding(images, D=2):
     mps_images = [fMPS_to_QTN(image_to_mps(image, D)) for image in images]
     return mps_images
@@ -95,7 +93,6 @@ def mps_encoding(images, D=2):
 """
 MPO Encoding
 """
-
 
 def class_encode_mps_to_mpo(mps, label, q_hairy_bitstrings, n_sites):
     mps_data = [tensor.data for tensor in mps.tensors]
@@ -128,19 +125,21 @@ Create Random Classifier
 """
 
 
-def create_mpo_classifier(mpo_train, seed=None, full_sized=False):
+def create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=None, full_sized=False):
 
     n_sites = mpo_train[0].num_tensors
     # Create MPO classifier
     tensors = []
     previous_ind = rand_uuid()
-    D_max = max([site.shape[-1] for site in mpo_train[0].tensors])
+    D_max = max([site.shape[-1] for site in mps_train[0].tensors])
 
     for pixel in range(n_sites):
         # Uses shape of mpo_train images
         # Quimb squeezes, thus need to specifiy size at the ends
-        d, s, i, j = mpo_train[0].tensors[pixel].data.shape
+        d, i, j = mps_train[0].tensors[pixel].data.shape
+        s = q_hairy_bitstrings[0].tensors[pixel].data.shape[0]
         next_ind = rand_uuid()
+
         if full_sized:
 
             if pixel == 0:
@@ -174,136 +173,6 @@ def create_mpo_classifier(mpo_train, seed=None, full_sized=False):
     mpo_classifier = qtn.TensorNetwork(tensors)
     mpo_classifier /= (mpo_classifier.H @ mpo_classifier) ** 0.5
     return mpo_classifier
-
-
-"""
-Create Initialised Classifier (New Way)
-"""
-
-
-def compress_QTN(projected_q_mpo, D, orthogonalise):
-    # ASSUMES q_mpo IS ALREADY PROJECTED ONTO |0> STATE FOR FIRST (n_sites - n_hairysites) SITES
-    # compress procedure leaves mpo in mixed canonical form
-    # center site is at left most hairest site.
-
-    if projected_q_mpo.tensors[-1].shape[1] > 4:
-        return fMPO_to_QTN(
-            QTN_to_fMPO(projected_q_mpo).compress_one_site(
-                D=D, orthogonalise=orthogonalise
-            )
-        )
-    return fMPO_to_QTN(
-        QTN_to_fMPO(projected_q_mpo).compress(D=D, orthogonalise=orthogonalise)
-    )
-
-
-def batch_adding_mpos(grouped_mpos, D, orthogonalise, compress=True):
-    # Add all MPOs in list squentially. I.e. add first batch_num together,
-    # then second batch_num etc. Then add result from first batch_num
-    # and second batch_num etc. Until everything is added.
-    batch_num = len(grouped_mpos[0])
-
-    # "Flatten" grouped_mpos in order to add together recursively
-    # Flattens as [sublist_0, sublist_1, ...]
-    flattened_grouped_mpos = [item for sublist in grouped_mpos for item in sublist]
-    added_mpos = flattened_grouped_mpos
-    while len(added_mpos) > 1:
-        results = []
-        for i in range(int(len(added_mpos) / batch_num) + 1):
-            sublist = added_mpos[i * batch_num : (i + 1) * batch_num]
-            if len(sublist) > 0:
-                if compress:
-                    results.append(
-                        compress_QTN(adding_sublist(sublist), D, orthogonalise)
-                    )
-                else:
-                    results.append(adding_sublist(sublist))
-        added_mpos = results
-    return compress_QTN(added_mpos[0], D, orthogonalise)
-
-
-def create_initialised_mpo_classifier(mpo_train, y_train, D, orthogonalise):
-    possible_labels = list(set(y_train))
-    n_samples = len(mpo_train)
-    n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
-    n_sites = mpo_train[0].num_tensors
-
-    # Project first (n_sites - n_hairysites) sites onto |0> state.
-    # This is nessercary in order for compression to not explode.
-    mpos = []
-    for mpo in mpo_train:
-        truncated_mpo_data = [
-            site.data[:, :1, :, :] if i < (n_sites - n_hairysites) else site.data
-            for i, site in enumerate(mpo.tensors)
-        ]
-        truncated_mpo = data_to_QTN(truncated_mpo_data)
-        truncated_mpo /= (truncated_mpo.H @ truncated_mpo) ** 0.5
-        mpos.append(truncated_mpo)
-
-    mpo_train = mpos
-
-    # Add images in equally divided batches.
-    # Sort images by label/encodings
-    grouped_images = [
-        [mpo_train[i] for i in range(n_samples) if y_train[i] == label]
-        for label in possible_labels
-    ]
-
-    # Ensure all images are included
-    assert sum([len(i) for i in grouped_images]) == n_samples
-
-    # Sorted MPOs, i.e. a list containing lists of mpos,
-    # with each mpo form a different class within the list
-    # Number of sublists is equal to #labels * min(#images in a class)
-    # All other mpo images are thrown away. :c
-    # Batch num dictated by length of sublist
-    grouped_mpos = [mpo_from_each_class for mpo_from_each_class in zip(*grouped_images)]
-
-    # Sequentially add batches of mpo images together to form initial classifier
-    initialised_classifier = batch_adding_mpos(grouped_mpos, D, orthogonalise)
-    return initialised_classifier
-
-
-"""
-Create Initialised Classifier (old way)
-"""
-
-
-def initialise_sequential_mpo_classifier(train_data, train_labels, D_total):
-    n_samples = len(train_data)
-    possible_labels = list(set(train_labels))
-    batch_num = 10
-
-    grouped_images = [
-        [train_data[i] for i in range(n_samples) if train_labels[i] == label]
-        for label in possible_labels
-    ]
-
-    train_data = [images for images in zip(*grouped_images)]
-    train_labels = [possible_labels for _ in train_data]
-
-    train_data = np.array([item for sublist in train_data for item in sublist])
-    train_labels = np.array([item for sublist in train_labels for item in sublist])
-
-    train_spread_mpo_product_states = mps_encoded_data(
-        train_data, train_labels, D_total
-    )
-    mpo_classifier = sequential_mpo_classifier(
-        train_labels=train_labels, mps_images=train_spread_mpo_product_states
-    )
-
-    train_spread_mpo_product_states = [
-        image for label in train_spread_mpo_product_states.values() for image in label
-    ]
-
-    MPOs = train_spread_mpo_product_states
-    while len(MPOs) > 1:
-        MPOs = mpo_classifier.adding_batches(
-            MPOs, D_total, batch_num, orthogonalise=False
-        )
-    classifier = MPOs[0].left_spread_canonicalise(D=D_total, orthogonalise=False)
-
-    return fMPO_to_QTN(classifier)
 
 
 """

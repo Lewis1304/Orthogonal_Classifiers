@@ -61,6 +61,26 @@ def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
 
     return x_train, y_train, x_test, y_test
 
+def arrange_data(data, labels, **kwargs):
+
+    if list(kwargs.values())[0] == 'random':
+        r_train = np.arange(len(data))
+        np.random.shuffle(r_train)
+        return data[r_train], labels[r_train]
+
+    elif list(kwargs.values())[0] == 'one of each':
+        return data, labels
+
+    elif list(kwargs.values())[0] == 'one class':
+        possible_labels = list(set(labels))
+        data = [[data[i] for i in range(k, len(data), len(possible_labels))] for k in possible_labels]
+        data = np.array([image for label in data for image in label])
+
+        labels = [[labels[i] for i in range(k, len(labels), len(possible_labels))] for k in possible_labels]
+        labels = np.array([image for label in labels for image in label])
+        return data, labels
+    else:
+        raise Exception('Arrangement type not understood')
 
 """
 Bitstring tools
@@ -150,63 +170,6 @@ def data_to_QTN(data):
         previous_ind = next_ind
         qtn_data.append(tensor)
     return qtn.TensorNetwork(qtn_data)
-
-
-"""
-Creating Initialised Classifier tools
-"""
-
-
-def add_mpos(a, b):
-    # Add quimb MPOs together. Assumes physical indicies are
-    # of same dimension
-
-    # Check tensors are of same length
-    assert a.num_tensors == b.num_tensors
-
-    a_data = [site.data for site in a.tensors]
-    b_data = [site.data for site in b.tensors]
-
-    new_data = [
-        1j
-        * np.zeros(
-            (
-                a_site.shape[0],
-                a_site.shape[1],
-                a_site.shape[2] + b_site.shape[2],
-                a_site.shape[3] + b_site.shape[3],
-            )
-        )
-        for a_site, b_site in zip(a_data, b_data)
-    ]
-
-    for i, (a_site, b_site) in enumerate(zip(a_data, b_data)):
-        if i == 0:
-            new_data[i] = np.concatenate([a_site, b_site], 3)
-        elif i == a.num_tensors - 1:
-            new_data[i] = np.concatenate([a_site, b_site], 2)
-        else:
-            new_data[i][:, :, : a_site.shape[2], : a_site.shape[3]] = a_site
-            new_data[i][:, :, a_site.shape[2] :, a_site.shape[3] :] = b_site
-    return data_to_QTN(new_data)
-
-
-def adding_sublist(sublist):
-    # Add all MPOs in a list
-    added_batch = sublist[0]
-    for mpo in sublist[1:]:
-        added_batch = add_mpos(added_batch, mpo)
-    return added_batch
-
-
-def QTN_to_fMPO(QTN):
-    qtn_data = [site.data for site in QTN.tensors]
-    return fMPO(qtn_data)
-
-
-def fMPO_to_QTN(fmpo):
-    fmpo_data = fmpo.data
-    return data_to_QTN(fmpo_data)
 
 
 """
