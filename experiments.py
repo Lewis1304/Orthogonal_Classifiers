@@ -31,7 +31,9 @@ def initialise_experiment(
     """
     #Load & Organise Data
     x_train, y_train, x_test, y_test = load_data(n_samples, shuffle = False, equal_numbers = True)
-    x_train, y_train = arrange_data(x_train, y_train, arrangement = 'one class')
+    if arrangement != 'none':
+        x_train, y_train = arrange_data(x_train, y_train, arrangement = 'one class')
+        assert()
 
     # All possible class labels
     possible_labels = list(set(y_train))
@@ -66,7 +68,7 @@ def initialise_experiment(
     else:
         # MPO encode data (already encoded as mps)
         # Has shape: # classes, mpo.shape
-        mpo_classifier = create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=420)
+        mpo_classifier = create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=420, full_sized = True)
 
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
 
@@ -83,21 +85,22 @@ def all_classes_experiment(
     loss_func,
     title,
     squeezed=False,
-    ortho_inbetween=False,
 ):
     print(title)
 
     classifier_opt = mpo_classifier
+    #classifier_opt = pad_qtn_classifier(mpo_classifier)
+    #classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
 
     if squeezed:
         q_hairy_bitstrings = [i.squeeze() for i in q_hairy_bitstrings]
-        classifier_opt = mpo_classifier.squeeze()
+        classifier_opt = classifier_opt.squeeze()
         mps_train = [i.squeeze() for i in mps_train]
 
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
-    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 1)]
+    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 3)]
     # variances = [evaluate_prediction_variance(initial_predictions)]
     losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
 
@@ -114,22 +117,24 @@ def all_classes_experiment(
 
     print(classifier_opt)
     print(q_hairy_bitstrings[0])
-    for i in range(1):
+    best_accuracy = 0
+    for i in range(1000):
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
 
-        if ortho_inbetween:
-            classifier_opt = compress_QTN(classifier_opt, D=None, orthogonalise=True)
-
         predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
         predicitions_store.append(predictions)
-        accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_train, 3))
+        accuracy = evaluate_classifier_top_k_accuracy(predictions, y_train, 1)
+        accuracies.append(accuracy)
         # variances.append(evaluate_prediction_variance(predictions))
 
         losses.append(optmzr.loss)
 
         plot_results((accuracies, losses, predicitions_store), title)
-        save_qtn_classifier(classifier_opt, title)
+
+        if accuracy > best_accuracy:
+            best_accuracy = accuracy
+            save_qtn_classifier(classifier_opt, title)
 
     return accuracies, losses
 
@@ -350,15 +355,17 @@ if __name__ == "__main__":
 
     num_samples = 1000
     D_total = 32
+    one_site = True
+    ortho_at_end = True
 
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
         D_total,
-        arrangement = 'one class',
+        arrangement = 'none',
         truncated=True,
-        one_site=False,
-        initialise_classifier=True,
-        initialise_classifier_settings = (10, False, False)
+        one_site=one_site,
+        initialise_classifier=False,
+        initialise_classifier_settings = (10, False, ortho_at_end)
 
     )
 
@@ -375,6 +382,7 @@ if __name__ == "__main__":
         labels,
         squeezed_classifier_predictions,
         abs_stoudenmire_loss,
-        "one_site_false_ortho_at_end_false_initialisation_abs_stoudenmire_loss",
+        #"padded_one_site_false_ortho_at_end_true_abs_stoudenmire_loss",
+        "full_sized_default_order_2",
         squeezed=True,
     )

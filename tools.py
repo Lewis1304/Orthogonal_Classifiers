@@ -208,6 +208,24 @@ def load_qtn_classifier(dir):
 
     return data_to_QTN(data)
 
+def pad_qtn_classifier(QTN):
+    D_max = QTN.max_bond()
+    qtn_data = [site.data for site in QTN.tensors]
+
+    data_padded = []
+    for k, site in enumerate(qtn_data):
+        d, s, i, j = site.shape
+
+        if k == 0:
+            site_padded = np.pad(site, ((0,0),(0,0),(0,0),(0,D_max-j)))
+        elif k == (len(qtn_data) - 1):
+            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,0)))
+        else:
+            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,D_max-j)))
+
+        data_padded.append(site_padded)
+
+    return data_to_QTN(data_padded)
 
 if __name__ == "__main__":
     pass

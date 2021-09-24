@@ -127,7 +127,7 @@ Create Random Classifier
 
 def create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=None, full_sized=False):
 
-    n_sites = mpo_train[0].num_tensors
+    n_sites = mps_train[0].num_tensors
     # Create MPO classifier
     tensors = []
     previous_ind = rand_uuid()
@@ -173,6 +173,33 @@ def create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=None, full_sized=F
     mpo_classifier = qtn.TensorNetwork(tensors)
     mpo_classifier /= (mpo_classifier.H @ mpo_classifier) ** 0.5
     return mpo_classifier
+
+
+def create_mpo_classifier_from_initialised_classifier(initialised_classifier, seed=None):
+
+    # Create MPO classifier
+    tensors = []
+    previous_ind = rand_uuid()
+    n_sites = initialised_classifier.num_tensors
+
+    for pixel in range(n_sites):
+        # Uses shape of mpo_train images
+        # Quimb squeezes, thus need to specifiy size at the ends
+        d, s, i, j = initialised_classifier.tensors[pixel].data.shape
+        next_ind = rand_uuid()
+
+        site_tensor = qtn.Tensor(
+            quimb.gen.rand.randn([d, s, i, j], seed=seed),
+            inds=(f"k{pixel}", f"s{pixel}", previous_ind, next_ind),
+            tags=[f"{pixel}"],
+        )
+        tensors.append(site_tensor)
+        previous_ind = next_ind
+
+    mpo_classifier = qtn.TensorNetwork(tensors)
+    mpo_classifier /= (mpo_classifier.H @ mpo_classifier) ** 0.5
+    return mpo_classifier
+
 
 
 """
@@ -234,7 +261,7 @@ def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
         ]
         for i in range(len(mps_train))
     ]
-    return np.sum(overlaps) / len(mps_train)
+    return np.sum(overlaps) / 2
 
 
 def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
@@ -250,7 +277,7 @@ def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
         ]
         for i in range(len(mps_train))
     ]
-    return np.sum(overlaps) / len(mps_train)
+    return np.sum(overlaps) / 2
 
 
 def normalize_tn(tn):
