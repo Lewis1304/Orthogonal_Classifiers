@@ -253,7 +253,7 @@ def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
         [
             (
-                anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))
+                anp.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
                 - int(y_train[i] == label)
             )
             ** 2
@@ -261,7 +261,7 @@ def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
         ]
         for i in range(len(mps_train))
     ]
-    return np.sum(overlaps) / 2
+    return np.sum(overlaps) / len(mps_train)
 
 
 def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
@@ -269,7 +269,7 @@ def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
         [
             (
-                abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[y_train[i]]))
+                abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
                 - int(y_train[i] == label)
             )
             ** 2
@@ -277,7 +277,7 @@ def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
         ]
         for i in range(len(mps_train))
     ]
-    return np.sum(overlaps) / 2
+    return np.sum(overlaps) / len(mps_train)
 
 
 def normalize_tn(tn):

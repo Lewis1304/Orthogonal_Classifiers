@@ -31,9 +31,7 @@ def initialise_experiment(
     """
     #Load & Organise Data
     x_train, y_train, x_test, y_test = load_data(n_samples, shuffle = False, equal_numbers = True)
-    if arrangement != 'none':
-        x_train, y_train = arrange_data(x_train, y_train, arrangement = 'one class')
-        assert()
+    x_train, y_train = arrange_data(x_train, y_train, arrangement = 'one class')
 
     # All possible class labels
     possible_labels = list(set(y_train))
@@ -88,8 +86,8 @@ def all_classes_experiment(
 ):
     print(title)
 
-    classifier_opt = mpo_classifier
-    #classifier_opt = pad_qtn_classifier(mpo_classifier)
+    #classifier_opt = mpo_classifier
+    classifier_opt = pad_qtn_classifier(mpo_classifier)
     #classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
 
     if squeezed:
@@ -100,7 +98,7 @@ def all_classes_experiment(
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
-    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 3)]
+    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 1)]
     # variances = [evaluate_prediction_variance(initial_predictions)]
     losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
 

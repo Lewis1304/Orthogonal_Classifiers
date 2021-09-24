@@ -65,7 +65,7 @@ fmps_images = [image_to_mps(image, D_total) for image in x_train]
 mps_train = mps_encoding(x_train, D_total)
 mpo_train = mpo_encoding(mps_train, y_train, quimb_hairy_bitstrings)
 
-mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
+mpo_classifier = create_mpo_classifier(mps_train, quimb_hairy_bitstrings, seed=420)
 
 predictions = np.array(
     classifier_predictions(mpo_classifier, mps_train, quimb_hairy_bitstrings)
@@ -318,100 +318,6 @@ def test_data_to_QTN():
     """
 
 
-def test_add_mpos():
-
-    # Check mpos are added in the right place (check for 3, for speed)
-    added_mpos = mpo_train[0]
-    for mpo in mpo_train[1:3]:
-        added_mpos = add_mpos(added_mpos, mpo)
-
-    # Check data of added MPOs (checks shape too).
-    for i, (site0, site1, site2, site3) in enumerate(
-        zip(
-            mpo_train[0].tensors,
-            mpo_train[1].tensors,
-            mpo_train[2].tensors,
-            added_mpos.tensors,
-        )
-    ):
-
-        if i == 0:
-            assert np.array_equal(site0.data, site3.data[:, :, :, : site0.shape[3]])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, :, site0.shape[3] : site0.shape[3] + site1.shape[3]],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    :,
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
-
-        elif i == (mpo_train[0].num_tensors - 1):
-            assert np.array_equal(site0.data, site3.data[:, :, : site0.shape[2], :])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, site0.shape[2] : site0.shape[2] + site1.shape[2], :],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    :,
-                ],
-            )
-
-        else:
-            assert np.array_equal(
-                site0.data, site3.data[:, :, : site0.shape[2], : site0.shape[3]]
-            )
-            assert np.array_equal(
-                site1.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2] : site0.shape[2] + site1.shape[2],
-                    site0.shape[3] : site0.shape[3] + site1.shape[3],
-                ],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
-
-
-def test_QTN_to_fMPO_and_back():
-    fmpo = QTN_to_fMPO(mpo_classifier)
-    QTN = fMPO_to_QTN(fmpo)
-
-    # Check that conversion (and back) doesn't change data.
-    for original, new in zip(mpo_classifier.tensors, QTN.tensors):
-        assert np.array_equal(original.data, new.data)
-
-
 def test_save_and_load_qtn_classifier():
     # Test non-squeezed classifier
     save_qtn_classifier(mpo_classifier, "pytest")
@@ -438,12 +344,8 @@ def test_save_and_load_qtn_classifier():
     ).all()
 
     # Test squeezed classifier loading (truncated)
-    truncated_mpo_train = mpo_encoding(
-        mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
-    )
-
     truncated_mpo_classifier = create_mpo_classifier(
-        truncated_mpo_train, seed=420
+        mps_train,truncated_quimb_hairy_bitstrings, seed=420
     ).squeeze()
 
     save_qtn_classifier(truncated_mpo_classifier, "pytest_squeezed_truncated")
@@ -451,7 +353,7 @@ def test_save_and_load_qtn_classifier():
         "pytest_squeezed_truncated"
     )
 
-    truncated_mpo_classifier = create_mpo_classifier(truncated_mpo_train, seed=420)
+    truncated_mpo_classifier = create_mpo_classifier(mps_train, truncated_quimb_hairy_bitstrings, seed=420)
 
     assert np.array(
         [

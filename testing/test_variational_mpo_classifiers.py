@@ -63,32 +63,11 @@ fmps_images = [image_to_mps(image, D_total) for image in x_train]
 mps_train = mps_encoding(x_train, D_total)
 mpo_train = mpo_encoding(mps_train, y_train, quimb_hairy_bitstrings)
 
-mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
+mpo_classifier = create_mpo_classifier(mps_train, quimb_hairy_bitstrings, seed=420)
 
 predictions = np.array(
     classifier_predictions(mpo_classifier, mps_train, quimb_hairy_bitstrings)
 )
-
-
-"""
-Squeeze all tensornetworks- hopefully speeds up contraction.
-Only need to test after initialisation- i.e. loss & prediction
-
-#Bitstrings
-quimb_hairy_bitstrings_squeezed = [i.squeeze() for i in quimb_hairy_bitstrings]
-truncated_quimb_hairy_bitstrings_squeezed = [i.squeeze() for i in truncated_quimb_hairy_bitstrings]
-truncated_one_site_quimb_hairy_bitstrings_squeezed = [i.squeeze() for i in truncated_one_site_quimb_hairy_bitstrings]
-quimb_padded_hairy_bitstrings_squeezed = [[i.squeeze() for i in j] for j in quimb_padded_hairy_bitstrings]
-
-# Data
-mps_train_squeezed = [i.squeeze() for i in mps_train]
-mpo_train_squeezed = [i.squeeze() for i in mps_train]
-print(truncated_one_site_quimb_hairy_bitstrings)
-print(mpo_classifier.squeeze())
-#Classifier
-mpo_classifier_squeezed = mpo_classifier.squeeze()
-"""
-
 
 def test_create_hairy_bitstrings_data():
 
@@ -179,9 +158,6 @@ def test_class_encode_mps_to_mpo():
 
 # TODO: Add truncated_quimb_hairy_bitstrings test
 def test_create_mpo_classifier():
-    mpo_train = mpo_encoding(mps_train, y_train[:100], quimb_hairy_bitstrings)
-
-    mpo_classifier = create_mpo_classifier(mpo_train)
 
     # Check shape is correct
     for site_a, site_b in zip(mpo_classifier.tensors, mpo_train[0].tensors):
@@ -190,149 +166,51 @@ def test_create_mpo_classifier():
     # Check classifier is normalised
     assert np.isclose(mpo_classifier.H @ mpo_classifier, 1)
 
-
-def test_compress():
-
-    # Truncated mpo needed otherwise dim(s) explodes when canonicalising
-    truncated_mpo_classifier_data = [
-        site.data[:, :1, :, :] if i < (n_sites - n_hairysites) else site.data
-        for i, site in enumerate(mpo_classifier.tensors)
-    ]
-    truncated_mpo_classifier = data_to_QTN(truncated_mpo_classifier_data)
-    truncated_mpo_classifier /= (
-        truncated_mpo_classifier.H @ truncated_mpo_classifier
-    ) ** 0.5
-
-    compressed_mpo = compress_QTN(truncated_mpo_classifier, D=None, orthogonalise=False)
-
-    # Check norm is still 1
-    assert np.isclose((compressed_mpo.H @ compressed_mpo), 1)
-
-    # Check overlap between initial classifier
-    # and compressed mpo with D=None is 1.
-    assert np.isclose((truncated_mpo_classifier.H @ compressed_mpo).norm(), 1)
-
-    # Check canonicl form- compress procedure leaves mpo in mixed canonical form
-    # center site is at left most hairest site.
-    for n, site in enumerate(compressed_mpo.tensors):
-        d, s, i, j = site.shape
-        if n < (n_sites - n_hairysites):
-            # reshape from (d, s, i, j) --> (d*j, s*i). As SVD was done like that.
-            U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
-            Uh = U.conj().T
-            assert np.array_equal(np.round(Uh @ U, 5), np.eye(s * i))
-        else:
-            # reshape from (d, s, i, j) --> (i, s*j*d). As SVD was done like that.
-            U = site.data.transpose(2, 1, 3, 0).reshape(i, s * j * d)
-            Uh = U.conj().T
-            assert np.array_equal(np.round(U @ Uh, 5), np.eye(i))
-
-    # Check compressed has right shape for range of different Ds
-    for max_D in range(1, 5):
-        compressed_mpo = compress_QTN(
-            truncated_mpo_classifier, D=max_D, orthogonalise=False
-        )
-        for i, (site0, site1) in enumerate(
-            zip(compressed_mpo.tensors, truncated_mpo_classifier)
-        ):
-
-            d0, s0, i0, j0 = site0.shape
-            d1, s1, i1, j1 = site1.shape
-
-            assert d0 == d1
-            assert s0 == s1
-
-            assert i0 <= max_D
-            assert j0 <= max_D
-    # TODO: Orthogonalisation test
-
-
-def test_compress_one_site():
-
-    one_site_mpo_train = mpo_encoding(
-        mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
-    )
-    one_site_mpo_classifier = create_mpo_classifier(one_site_mpo_train, seed=420)
-
-    one_site_compressed_mpo = compress_QTN(
-        one_site_mpo_classifier, D=None, orthogonalise=False
-    )
-
-    # Check norm is still 1
-    assert np.isclose((one_site_compressed_mpo.H @ one_site_compressed_mpo), 1)
-
-    # Check overlap between initial classifier
-    # and compressed mpo with D=None is 1.
-    assert np.isclose((one_site_mpo_classifier.H @ one_site_compressed_mpo).norm(), 1)
-
-    orthogonal_one_site_mpo = compress_QTN(
-        one_site_mpo_classifier, D=None, orthogonalise=True
-    )
-    # Check Canonical form and orthogonal
-    for k, site in enumerate(orthogonal_one_site_mpo.tensors):
-        d, s, i, j = site.data.shape
-        U = site.data.transpose(0, 2, 1, 3).reshape(d * i, s * j)
-        Uh = U.conj().T
-        if k < one_site_compressed_mpo.num_tensors - 1:
-            assert np.isclose(Uh @ U, np.eye(s * j)).all()
-        else:
-            assert np.isclose(U @ Uh, np.eye(d * i)).all()
-
-
-def test_batch_adding_mpos():
-    mpos = []
-
-    # Truncate images- required for Orthogonalisation procedure
-    # to work.
-    for mpo in mpo_train:
-        truncated_mpo_data = [
-            site.data[:, :1, :, :] if i < (n_sites - n_hairysites) else site.data
-            for i, site in enumerate(mpo.tensors)
-        ]
-        truncated_mpo = data_to_QTN(truncated_mpo_data)
-        truncated_mpo /= (truncated_mpo.H @ truncated_mpo) ** 0.5
-        mpos.append(truncated_mpo)
-
-    grouped_images = [
-        [mpos[i] for i in range(n_train) if y_train[i] == label]
-        for label in possible_labels
-    ]
-    grouped_mpos = [mpo_from_each_class for mpo_from_each_class in zip(*grouped_images)]
-
-    batch_added_mpos = batch_adding_mpos(
-        grouped_mpos, D=None, orthogonalise=False, compress=False
-    )
-
-    # Check, for compress = False that batch_adding_mpos is equivalent to simply adding all mpos.
-    flattened_grouped_mpos = [item for sublist in grouped_mpos for item in sublist]
-    added_mpos = flattened_grouped_mpos[0]
-    for mpo in flattened_grouped_mpos[1:]:
-        added_mpos = add_mpos(added_mpos, mpo)
-    # "compression" required since compression done in batch addng changes the local values
-    added_mpos = compress_QTN(added_mpos, D=None, orthogonalise=False)
-    i = 0
-    for site0, site1 in zip(batch_added_mpos.tensors, added_mpos.tensors):
-        assert np.array_equal(site0.data, site1.data)
-
-    # Check shape is correct for D != None.
-    max_D = 5
-    batch_added_mpos = batch_adding_mpos(
-        grouped_mpos, D=max_D, orthogonalise=False, compress=True
-    )
-    for site0, site1 in zip(batch_added_mpos.tensors, mpos[0].tensors):
-        d0, s0, i0, j0 = site0.shape
-        d1, s1, i1, j1 = site1.shape
-
-        assert d0 == d1
-        assert s0 == s1
-
-        assert i0 <= max_D
-        assert j0 <= max_D
-
-
 # TODO: Add truncated_quimb_hairy_bitstrings test
 # Assumes squeezed TNs
 def test_loss_functions():
+
+    def old_stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+        # Loss for more than one class
+        # Trains over all images in classes specified by y_train
+        n_samples = len(mps_train)
+        possible_labels = list(set(y_train))
+        overlaps = []
+        for i in range(len(mps_train)):
+            for label in possible_labels:
+
+                if y_train[i] == label:
+                    overlap = (
+                        np.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
+                    - 1) ** 2
+                else:
+                    overlap = np.real(
+                        mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
+                    ) ** 2
+                overlaps.append(overlap)
+        #print(overlaps)
+        return np.sum(overlaps) / len(mps_train)
+
+    def old_abs_stoundenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
+        # Loss for more than one class
+        # Trains over all images in classes specified by y_train
+        n_samples = len(mps_train)
+        possible_labels = list(set(y_train))
+        overlaps = []
+        for i in range(len(mps_train)):
+            for label in possible_labels:
+
+                if y_train[i] == label:
+                    overlap = (
+                        abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
+                    - 1) ** 2
+                else:
+                    overlap = np.real(
+                        mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
+                    ) ** 2
+                overlaps.append(overlap)
+        #print(overlaps)
+        return np.sum(overlaps) / len(mps_train)
 
     # Check loss is -1.0 between same image as mps image and mpo classifier
     truncated_mpo_train = [
@@ -374,16 +252,19 @@ def test_loss_functions():
 
     # Stoudenmire Loss
     loss = stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    old_loss = old_stoundenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == 0.0
 
     # Abs stoudenmire Loss
     loss = abs_stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    old_loss = old_abs_stoundenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
     assert np.round(loss, 3) == 0.0
+    assert(old_loss == loss)
 
     # Check loss between images and randomly initialised mpo classifier
     # All overlaps should be roughly equal. To a degree!
-    squeezed_mpo_classifier = create_mpo_classifier(
-        mpo_encoding(mps_train, y_train, truncated_quimb_hairy_bitstrings)
+    squeezed_mpo_classifier = create_mpo_classifier(mps_train,
+            truncated_quimb_hairy_bitstrings
     ).squeeze()
     squeezed_images = [i.squeeze() for i in mps_train][:10]
     squeezed_bitstrings = [i.squeeze() for i in truncated_quimb_hairy_bitstrings]
@@ -457,6 +338,8 @@ def test_loss_functions():
     loss = stoudenmire_loss(
         squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
     )
+    old_loss = old_stoundenmire_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+
     mini_possible_labels = list(set(y_train[:10]))
     overlap = np.sum(
         [
@@ -472,11 +355,14 @@ def test_loss_functions():
         ]
     )
     assert np.isclose(loss, overlap, atol=1e-01)
+    assert(loss == old_loss)
 
     # Abs Stoudenmire Loss
     loss = abs_stoudenmire_loss(
         squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10]
     )
+    old_loss = old_abs_stoundenmire_loss(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings, y_train[:10])
+
     mini_possible_labels = list(set(y_train[:10]))
     overlap = np.sum(
         [
@@ -492,7 +378,7 @@ def test_loss_functions():
         ]
     )
     assert np.isclose(loss, overlap, atol=1e-01)
-
+    assert(loss == old_loss)
 
 def test_classifier_predictions():
 
