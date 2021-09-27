@@ -31,7 +31,7 @@ def initialise_experiment(
     """
     #Load & Organise Data
     x_train, y_train, x_test, y_test = load_data(n_samples, shuffle = False, equal_numbers = True)
-    x_train, y_train = arrange_data(x_train, y_train, arrangement = 'one class')
+    x_train, y_train = arrange_data(x_train, y_train, arrangement = arrangement)
 
     # All possible class labels
     possible_labels = list(set(y_train))
@@ -359,10 +359,10 @@ if __name__ == "__main__":
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
         D_total,
-        arrangement = 'none',
+        arrangement = 'one class',
         truncated=True,
         one_site=one_site,
-        initialise_classifier=False,
+        initialise_classifier=True,
         initialise_classifier_settings = (10, False, ortho_at_end)
 
     )
@@ -380,7 +380,7 @@ if __name__ == "__main__":
         labels,
         squeezed_classifier_predictions,
         abs_stoudenmire_loss,
-        #"padded_one_site_false_ortho_at_end_true_abs_stoudenmire_loss",
-        "full_sized_default_order_2",
+        "padded_one_site_true_ortho_at_end_true_abs_stoudenmire_loss",
+        #"full_sized_random_one_site_false",
         squeezed=True,
     )
