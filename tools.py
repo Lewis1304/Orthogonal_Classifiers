@@ -209,7 +209,7 @@ def load_qtn_classifier(dir):
     return data_to_QTN(data)
 
 def pad_qtn_classifier(QTN):
-    D_max = QTN.max_bond()
+    D_max = np.max([np.max(tensor.shape, axis = -1) for tensor in QTN.tensors])
     qtn_data = [site.data for site in QTN.tensors]
 
     data_padded = []

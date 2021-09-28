@@ -91,36 +91,6 @@ def mps_encoding(images, D=2):
 
 
 """
-MPO Encoding
-"""
-
-def class_encode_mps_to_mpo(mps, label, q_hairy_bitstrings, n_sites):
-    mps_data = [tensor.data for tensor in mps.tensors]
-    # class_encoded_mps.shape = #pixels, dim(d), d(s), i, j
-    class_encoded_mps = [
-        np.array(
-            [mps_data[site] * i for i in q_hairy_bitstrings[label].tensors[site].data]
-        ).transpose(1, 0, 2, 3)
-        for site in range(n_sites)
-    ]
-    return class_encoded_mps
-
-
-def mpo_encoding(mps_train, y_train, q_hairy_bitstrings):
-    n_samples = len(mps_train)
-    n_sites = mps_train[0].num_tensors
-    mpo_train = [
-        data_to_QTN(
-            class_encode_mps_to_mpo(
-                mps_train[i], y_train[i], q_hairy_bitstrings, n_sites
-            )
-        )
-        for i in range(n_samples)
-    ]
-    return mpo_train
-
-
-"""
 Create Random Classifier
 """
 
@@ -284,11 +254,6 @@ def normalize_tn(tn):
     return tn / (tn.H @ tn) ** 0.5
 
 
-def orthogonalise_and_normalize(tn):
-    tn = compress_QTN(tn, D=None, orthogonalise=True)
-    return tn / (tn.H @ tn) ** 0.5
-
-
 """
 Evaluate classifier
 """
@@ -310,15 +275,6 @@ def squeezed_classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings
         for test_image in mps_test
     ]
     return predictions
-
-
-def evaluate_classifier_accuracy(predictions, y_test):
-    argmax_predictions = [
-        np.argmax(image_prediction) for image_prediction in predictions
-    ]
-    results = np.mean([int(i == j) for i, j in zip(y_test, argmax_predictions)])
-    return results
-
 
 def evaluate_classifier_top_k_accuracy(predictions, y_test, k):
     top_k_predicitions = [
