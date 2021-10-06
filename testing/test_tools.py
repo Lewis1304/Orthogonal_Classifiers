@@ -17,6 +17,7 @@ import sys
 sys.path.append("../")
 from tools import *
 from variational_mpo_classifiers import *
+from deterministic_mpo_classifier import mpo_encoding, class_encode_mps_to_mpo
 
 from xmps.ncon import ncon as nc
 
@@ -31,7 +32,7 @@ n_train = 100
 n_test = 100
 D_total = 10
 
-x_train, y_train, x_test, y_test = load_data(n_train, n_test)
+x_train, y_train, x_test, y_test = load_data(n_train, n_test, equal_numbers = True)
 
 possible_labels = list(set(y_train))
 n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
@@ -44,7 +45,6 @@ hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
 one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites, one_site=True
 )
-
 
 quimb_hairy_bitstrings = bitstring_data_to_QTN(
     hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
@@ -65,7 +65,7 @@ fmps_images = [image_to_mps(image, D_total) for image in x_train]
 mps_train = mps_encoding(x_train, D_total)
 mpo_train = mpo_encoding(mps_train, y_train, quimb_hairy_bitstrings)
 
-mpo_classifier = create_mpo_classifier(mpo_train, seed=420)
+mpo_classifier = create_mpo_classifier(mps_train, quimb_hairy_bitstrings, seed=420)
 
 predictions = np.array(
     classifier_predictions(mpo_classifier, mps_train, quimb_hairy_bitstrings)
@@ -92,15 +92,43 @@ def test_load_data():
     assert list(set(y_train)) == list(range(10))
     assert list(set(y_test)) == list(range(10))
 
+    #Test for equal classes, equal number of each class.
+    assert(np.array([len(x_train[y_train == label]) == (n_train // 10) for label in possible_labels]).all())
+
+
+
+def test_arrange_data():
+    #Requires equal_numbers to be true
+
+    #test random
+    random_x_train, random_y_train = arrange_data(x_train, y_train, arrangement = 'random')
+    assert(not np.array_equal(random_x_train, x_train))
+    assert(not np.array_equal(random_y_train, y_train))
+
+    #test one of each
+    one_of_each_x_train, one_of_each_y_train = arrange_data(x_train, y_train, arrangement = 'one of each')
+    n_samples_per_class = n_train // len(possible_labels)
+    assert(np.array([
+            np.array_equal
+            (
+            one_of_each_y_train[i*len(possible_labels):(i+1)*len(possible_labels)],
+            possible_labels
+            )
+            for i in range(n_samples_per_class)]).all())
+
+    #test one class
+    one_class_x_train, one_class_y_train = arrange_data(x_train, y_train, arrangement = 'one class')
+    assert(np.array([list(set(one_class_y_train[i*n_samples_per_class:(i+1)*n_samples_per_class])) == [i] for i in possible_labels]).all())
+
 
 def test_bitstrings():
+    # Test for n_hairysites != 1
     bitstrings = create_bitstrings(possible_labels, n_hairysites)
 
     from_bitstring_to_numbers = [
         sum([int(b) * 2 ** k for k, b in enumerate(bitstrings[i][::-1])])
         for i in possible_labels
     ]
-
     # Test whether bitstring correctly converts labels to binary
     # By converting back to numeral
     assert from_bitstring_to_numbers == possible_labels
@@ -242,15 +270,14 @@ def test_fMPS_to_QTN():
             assert np.array_equal(fsite.squeeze(), qsite.data.squeeze())
 
 
-# TODO: Add truncated_quimb_hairy_bitstrings test
 def test_data_to_QTN():
 
+    #Check untruncated multiple sites
     class_encoded_mpos = [
-        class_encode_mps_to_mpo(mps_train[0], label, quimb_hairy_bitstrings, n_sites)
+        class_encode_mps_to_mpo(mps_train[0], label, quimb_hairy_bitstrings)
         for label in possible_labels
     ]
     quimb_encoded_mpos = [data_to_QTN(mpo) for mpo in class_encoded_mpos]
-
     # Check converting to quimb tensor does not alter the data.
     # Check for all labels.
     for label in possible_labels:
@@ -259,17 +286,32 @@ def test_data_to_QTN():
         ):
             assert np.array_equal(data, q_data.data)
 
-    # Check truncated
+
+    #Check untruncated one site
+    one_site_class_encoded_mpos = [
+        class_encode_mps_to_mpo(mps_train[0], label, one_site_quimb_hairy_bitstrings)
+        for label in possible_labels
+    ]
+    one_site_quimb_encoded_mpos = [data_to_QTN(mpo) for mpo in one_site_class_encoded_mpos]
+    # Check converting to quimb tensor does not alter the data.
+    # Check for all labels.
+    for label in possible_labels:
+        for data, q_data in zip(
+            one_site_class_encoded_mpos[label], one_site_quimb_encoded_mpos[label].tensors
+        ):
+            assert np.array_equal(data, q_data.data)
+
+
+    #Check truncated multiple sites
     truncated_class_encoded_mpos = [
         class_encode_mps_to_mpo(
-            mps_train[0], label, truncated_quimb_hairy_bitstrings, n_sites
+            mps_train[0], label, truncated_quimb_hairy_bitstrings
         )
         for label in possible_labels
     ]
     truncated_quimb_encoded_mpos = [
         data_to_QTN(mpo) for mpo in truncated_class_encoded_mpos
     ]
-
     # Check converting to quimb tensor does not alter the data.
     # Check for all labels.
     for label in possible_labels:
@@ -279,137 +321,25 @@ def test_data_to_QTN():
         ):
             assert np.array_equal(data, q_data.data)
 
-    """
-    mps_train = mps_encoding(x_train[:100], D_total)
-    hairy_bitstring_data = create_hairy_bitstrings_data(possible_labels, n_hairysites, n_sites, truncated=False)
-    quimb_hairy_bitstrings = bitstring_data_to_QTN(hairy_bitstring_data)
 
-    mpo_train = mpo_encoding(mps_train, y_train[:100], quimb_hairy_bitstrings)
-
-    #Check all labels are represented
-    assert(len(mpo_train) == len(possible_labels))
-
-    a = mpo_train[0][0]
-    b = mpo_train[0][0] | quimb_hairy_bitstrings[0]
-    for i in range(n_sites):
-        b.contract_ind(f's{i}')
-    b.squeeze(inplace=True)
-
-    bt = b.tensors
-    c = mps_train[0]
-    ct = c.tensors
-    print(bt[0].data)
-    print(ct[0].data)
-
-
-    assert()
-    #Check projection on bitstrings returns mps data
-    for label in possible_labels:
-        for mpo_image, mps_image in zip(mpo_train[label], mps_train):
-            proj = mpo_image | quimb_hairy_bitstrings[label]
-            for i in range(n_sites):
-                proj.contract_ind(f's{i}')
-            proj.squeeze(inplace = True)
-            mps_image.squeeze(inplace = True)
-        proj_tensors = proj.tensors
-        mps_imag_tensors = mps_image.tensors
-        print(np.array_equal(proj_tensors, mps_imag_tensors))
-        assert()
-    """
-
-
-def test_add_mpos():
-
-    # Check mpos are added in the right place (check for 3, for speed)
-    added_mpos = mpo_train[0]
-    for mpo in mpo_train[1:3]:
-        added_mpos = add_mpos(added_mpos, mpo)
-
-    # Check data of added MPOs (checks shape too).
-    for i, (site0, site1, site2, site3) in enumerate(
-        zip(
-            mpo_train[0].tensors,
-            mpo_train[1].tensors,
-            mpo_train[2].tensors,
-            added_mpos.tensors,
+    #Check truncated one site
+    one_site_truncated_class_encoded_mpos = [
+        class_encode_mps_to_mpo(
+            mps_train[0], label, truncated_one_site_quimb_hairy_bitstrings
         )
-    ):
-
-        if i == 0:
-            assert np.array_equal(site0.data, site3.data[:, :, :, : site0.shape[3]])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, :, site0.shape[3] : site0.shape[3] + site1.shape[3]],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    :,
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
-
-        elif i == (mpo_train[0].num_tensors - 1):
-            assert np.array_equal(site0.data, site3.data[:, :, : site0.shape[2], :])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, site0.shape[2] : site0.shape[2] + site1.shape[2], :],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    :,
-                ],
-            )
-
-        else:
-            assert np.array_equal(
-                site0.data, site3.data[:, :, : site0.shape[2], : site0.shape[3]]
-            )
-            assert np.array_equal(
-                site1.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2] : site0.shape[2] + site1.shape[2],
-                    site0.shape[3] : site0.shape[3] + site1.shape[3],
-                ],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
-
-
-def test_QTN_to_fMPO_and_back():
-    fmpo = QTN_to_fMPO(mpo_classifier)
-    QTN = fMPO_to_QTN(fmpo)
-
-    # Check that conversion (and back) doesn't change data.
-    for original, new in zip(mpo_classifier.tensors, QTN.tensors):
-        assert np.array_equal(original.data, new.data)
+        for label in possible_labels
+    ]
+    one_site_truncated_quimb_encoded_mpos = [
+        data_to_QTN(mpo) for mpo in one_site_truncated_class_encoded_mpos
+    ]
+    # Check converting to quimb tensor does not alter the data.
+    # Check for all labels.
+    for label in possible_labels:
+        for data, q_data in zip(
+            one_site_truncated_class_encoded_mpos[label],
+            one_site_truncated_quimb_encoded_mpos[label].tensors,
+        ):
+            assert np.array_equal(data, q_data.data)
 
 
 def test_save_and_load_qtn_classifier():
@@ -438,12 +368,8 @@ def test_save_and_load_qtn_classifier():
     ).all()
 
     # Test squeezed classifier loading (truncated)
-    truncated_mpo_train = mpo_encoding(
-        mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
-    )
-
     truncated_mpo_classifier = create_mpo_classifier(
-        truncated_mpo_train, seed=420
+        mps_train,truncated_quimb_hairy_bitstrings, seed=420
     ).squeeze()
 
     save_qtn_classifier(truncated_mpo_classifier, "pytest_squeezed_truncated")
@@ -451,7 +377,7 @@ def test_save_and_load_qtn_classifier():
         "pytest_squeezed_truncated"
     )
 
-    truncated_mpo_classifier = create_mpo_classifier(truncated_mpo_train, seed=420)
+    truncated_mpo_classifier = create_mpo_classifier(mps_train, truncated_quimb_hairy_bitstrings, seed=420)
 
     assert np.array(
         [
@@ -463,7 +389,44 @@ def test_save_and_load_qtn_classifier():
         ]
     ).all()
 
+def test_pad_qtn_classifier():
+    padded_classifier = pad_qtn_classifier(mpo_classifier)
+    D_max = np.max([np.max(tensor.shape, axis = -1) for tensor in mpo_classifier.tensors])
+
+    #Check shape
+    for k, (site_a, site_b) in enumerate(zip(mpo_classifier.tensors, padded_classifier.tensors)):
+        d1, s1, i1, j1 = site_a.shape
+        d2, s2, i2, j2 = site_b.shape
+
+        if k == 0:
+            assert(d1 == d2)
+            assert(s1 == s2)
+            assert(i2 == 1)
+            assert(j2 == D_max)
+        elif k == (padded_classifier.num_tensors - 1):
+            assert(d1 == d2)
+            assert(s1 == s2)
+            assert(i2 == D_max)
+            assert(j2 == 1)
+        else:
+            assert(d1 == d2)
+            assert(s1 == s2)
+            assert(i2 == D_max)
+            assert(j2 == D_max)
+
+    #Check data is encoded
+    for site_a, site_b in zip(mpo_classifier.tensors, padded_classifier.tensors):
+        d1, s1, i1, j1 = site_a.shape
+        d2, s2, i2, j2 = site_b.shape
+
+        #check data is there
+        assert(np.array_equal(site_b.data[:d1,:s1,:i1,:j1], site_a.data))
+        #check rest of data is just zeros
+        assert(np.array_equal(site_b.data[d1:,s1:,i1:,j1:], np.zeros((d2-d1,s2-s1,i2-i1,j2-j1))))
+
+
 
 if __name__ == "__main__":
     # test_bitstring_data_to_QTN()
-    test_save_and_load_qtn_classifier()
+    #test_save_and_load_qtn_classifier()
+    test_pad_qtn_classifier()

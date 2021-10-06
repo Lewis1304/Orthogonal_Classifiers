@@ -21,16 +21,66 @@ Data tools
 """
 
 
-def load_data(n_train, n_test=1):
+def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+    if shuffle:
+        r_train = np.arange(len(x_train))
+        r_test = np.arange(len(x_test))
+        np.random.shuffle(r_train)
+        np.random.shuffle(r_test)
+
+        x_train = x_train[r_train]
+        y_train = y_train[r_train]
+
+        x_test = x_test[r_test]
+        y_test = y_test[r_test]
+
+    if equal_numbers:
+        n_train_per_class = n_train // len(list(set(y_train)))
+        n_test_per_class = n_test // len(list(set(y_train)))
+
+        grouped_x_train = [x_train[y_train == label][:n_train_per_class] for label in list(set(y_train))]
+        grouped_x_test = [x_test[y_test == label][:n_test_per_class] for label in list(set(y_test))]
+
+        train_data = np.array([images for images in zip(*grouped_x_train)])
+        train_labels = [list(set(y_train)) for _ in train_data]
+        test_data = np.array([images for images in zip(*grouped_x_test)])
+        test_labels = [list(set(y_test)) for _ in range(len(test_data))]
+
+        x_train = np.array([item for sublist in train_data for item in sublist])
+        y_train = np.array([item for sublist in train_labels for item in sublist])
+        x_test = np.array([item for sublist in test_data for item in sublist])
+        y_test = np.array([item for sublist in test_labels for item in sublist])
 
     x_train, x_test = (x_train.reshape(len(x_train), -1) / 255)[:n_train], (
         x_test.reshape(len(x_test), -1) / 255
     )[:n_test]
     y_train, y_test = y_train[:n_train], y_test[:n_test]
+
     return x_train, y_train, x_test, y_test
 
+def arrange_data(data, labels, **kwargs):
+
+    if list(kwargs.values())[0] == 'random':
+        r_train = np.arange(len(data))
+        np.random.shuffle(r_train)
+        return data[r_train], labels[r_train]
+
+    elif list(kwargs.values())[0] == 'one of each':
+        return data, labels
+
+    elif list(kwargs.values())[0] == 'one class':
+        possible_labels = list(set(labels))
+        data = [[data[i] for i in range(k, len(data), len(possible_labels))] for k in possible_labels]
+        data = np.array([image for label in data for image in label])
+
+        labels = [[labels[i] for i in range(k, len(labels), len(possible_labels))] for k in possible_labels]
+        labels = np.array([image for label in labels for image in label])
+        return data, labels
+    else:
+        raise Exception('Arrangement type not understood')
 
 """
 Bitstring tools
@@ -123,63 +173,6 @@ def data_to_QTN(data):
 
 
 """
-Creating Initialised Classifier tools
-"""
-
-
-def add_mpos(a, b):
-    # Add quimb MPOs together. Assumes physical indicies are
-    # of same dimension
-
-    # Check tensors are of same length
-    assert a.num_tensors == b.num_tensors
-
-    a_data = [site.data for site in a.tensors]
-    b_data = [site.data for site in b.tensors]
-
-    new_data = [
-        1j
-        * np.zeros(
-            (
-                a_site.shape[0],
-                a_site.shape[1],
-                a_site.shape[2] + b_site.shape[2],
-                a_site.shape[3] + b_site.shape[3],
-            )
-        )
-        for a_site, b_site in zip(a_data, b_data)
-    ]
-
-    for i, (a_site, b_site) in enumerate(zip(a_data, b_data)):
-        if i == 0:
-            new_data[i] = np.concatenate([a_site, b_site], 3)
-        elif i == a.num_tensors - 1:
-            new_data[i] = np.concatenate([a_site, b_site], 2)
-        else:
-            new_data[i][:, :, : a_site.shape[2], : a_site.shape[3]] = a_site
-            new_data[i][:, :, a_site.shape[2] :, a_site.shape[3] :] = b_site
-    return data_to_QTN(new_data)
-
-
-def adding_sublist(sublist):
-    # Add all MPOs in a list
-    added_batch = sublist[0]
-    for mpo in sublist[1:]:
-        added_batch = add_mpos(added_batch, mpo)
-    return added_batch
-
-
-def QTN_to_fMPO(QTN):
-    qtn_data = [site.data for site in QTN.tensors]
-    return fMPO(qtn_data)
-
-
-def fMPO_to_QTN(fmpo):
-    fmpo_data = fmpo.data
-    return data_to_QTN(fmpo_data)
-
-
-"""
 Classifier tools
 """
 
@@ -215,6 +208,24 @@ def load_qtn_classifier(dir):
 
     return data_to_QTN(data)
 
+def pad_qtn_classifier(QTN):
+    D_max = np.max([np.max(tensor.shape, axis = -1) for tensor in QTN.tensors])
+    qtn_data = [site.data for site in QTN.tensors]
+
+    data_padded = []
+    for k, site in enumerate(qtn_data):
+        d, s, i, j = site.shape
+
+        if k == 0:
+            site_padded = np.pad(site, ((0,0),(0,0),(0,0),(0,D_max-j)))
+        elif k == (len(qtn_data) - 1):
+            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,0)))
+        else:
+            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,D_max-j)))
+
+        data_padded.append(site_padded)
+
+    return data_to_QTN(data_padded)
 
 if __name__ == "__main__":
     pass

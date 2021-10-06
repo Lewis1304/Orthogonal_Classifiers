@@ -1,6 +1,6 @@
 """fMPO: Finite length matrix product operators"""
 import numpy as np
-from numpy import diag, expand_dims
+from numpy import diag, expand_dims, zeros, concatenate
 
 from scipy.linalg import polar
 from tqdm import tqdm
@@ -9,6 +9,7 @@ import uuid
 from xmps.svd_robust import svd
 from xmps.ncon import ncon as nc
 from xmps.tensor import rank
+from xmps.fMPS import fMPS
 
 
 def ncon(*args, **kwargs):
@@ -70,7 +71,7 @@ class fMPO:
     def __str__(self):
         return "fMPO: L={}, d={}, s={}, D={}".format(self.L, self.d, self.s, self.D)
 
-    def compress(self, D=None, orthogonalise=True):
+    def compress(self, D=None, orthogonalise=False):
         """compress: compress internal bonds of fMPO,
         potentially with a orthogonalisation
 
@@ -235,7 +236,6 @@ class fMPO:
 
         # test2 = self
         # print([i.shape for i in test2])
-
         return self
 
     def compress_one_site(self, D=None, orthogonalise=False):
@@ -244,17 +244,6 @@ class fMPO:
 
         :param D: bond dimension to truncate to during left sweep
         """
-
-        # Check that right most site is hairy, and no others are.
-        # Since procedure only works for truncated mpo
-        for i, site in enumerate(self):
-            if i < self.L - 1:
-                assert site.shape[1] == 1
-            else:
-                assert site.shape[1] == 16
-
-        if D is not None:
-            self.D = min(D, self.D)
 
         def split(datum):
             """split: Do SVD and reshape A matrix
@@ -274,6 +263,22 @@ class fMPO:
             """
             u = expand_dims(u.reshape(d, i, -1), 1)
             v = expand_dims(v.reshape(-1, s, j), 0).transpose(0, 2, 1, 3)
+            return u, diag(S), v
+
+        def split_back(datum):
+            """split: Do SVD and reshape A matrix
+            :param M: matrix
+            """
+            d, s, i, j = datum.shape
+            """
+            reshapes s with d and j such that M.shape = (i,s*j*d)
+            """
+            M = datum.transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            u, S, v = svd(M, full_matrices=False)
+
+            u = expand_dims(expand_dims(u.reshape(i, -1), 0), 0)
+            v = v.reshape(-1, s, j, d).transpose(3, 1, 0, 2)
+
             return u, diag(S), v
 
         def truncate_MPO(A, S, V, D):
@@ -297,6 +302,7 @@ class fMPO:
         for m in range(len(self.data)):
 
             # sort out canonicalisation
+
             if m + 1 < len(self.data):
                 A, S, V = split(self[m])
                 self[m], S, V = truncate_MPO(A, S, V, D)
@@ -315,6 +321,7 @@ class fMPO:
                 )
             else:
                 d, s, i, j = self[m].shape
+
                 if orthogonalise:
 
                     self[m] = (
@@ -323,8 +330,48 @@ class fMPO:
                         .transpose(0, 2, 1, 3)
                     )
 
+
+        for m in range(len(self.data))[::-1]:
+            A, S, V = split_back(self[m])
+            U, S, self[m] = truncate_MPO(A, S, V, D)
+
+            if m > 0:
+                """
+                ncon: Contract self[m-1] j leg with U@S i leg
+                transpose: take (d_1,s_1,i_1,d_2,s_2,j_2) to (d_1,d_2,s_1,s_2,i_1,j_2)
+                reshape: group together d and s legs such that .shape = (d_1d_2,s_1s_2,i_1,j_2)
+                """
+                d_1, s_1, i_1, j_1 = self[m - 1].shape
+                d_2, s_2, i_2, j_2 = (U @ S).shape
+                #print('self[m-1]: ', self[m-1].shape)
+                #print('U@S: ', (U @ S).shape)
+                self[m - 1] = (
+                    ncon((self[m - 1], U @ S), [[-1, -2, -3, 4], [-5, -6, 4, -7]])
+                    .transpose(0, 3, 1, 4, 2, 5)
+                    .reshape(d_1 * d_2, s_1 * s_2, i_1, j_2)
+                )
+            #d, s, i, j = self[m].shape
+            #test = self[m].transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            #testh = test.conj().T
+            #print(np.diag(test@testh))
         return self
 
+    def add(self, other):
+        """add: proper mpo addition here
+        """
+        new_data = [1j*zeros((self[i].shape[0], self[i].shape[1], self[i].shape[2]+other[i].shape[2], self[i].shape[3]+other[i].shape[3])) for i in range(self.L)]
+        for i in range(self.L):
+            if i == 0:
+                new_data[i] = concatenate([self[i], other[i]], 3)
+            elif i == self.L-1:
+                new_data[i] = concatenate([self[i], other[i]], 2)
+            else:
+                new_data[i][:,:, :self[i].shape[2], :self[i].shape[3]] = self[i]
+                new_data[i][:,:, self[i].shape[2]:, self[i].shape[3]:] = other[i]
+
+        return fMPO(new_data)
+
+    
 
 if __name__ == "__main__":
     pass
