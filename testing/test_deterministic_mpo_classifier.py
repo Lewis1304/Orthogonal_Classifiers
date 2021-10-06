@@ -254,14 +254,14 @@ def test_prepare_batched_classifier():
     squeezed_one_site_mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
 
 
-    squeezed_truncated_quimb_hairy_bitstrings = [i.squeeze() for i in truncated_quimb_hairy_bitstrings]
-    squeezed_truncated_one_site_quimb_hairy_bitstrings = [i.squeeze() for i in truncated_one_site_quimb_hairy_bitstrings]
+    squeezed_truncated_quimb_hairy_bitstrings = [i for i in truncated_quimb_hairy_bitstrings]
+    squeezed_truncated_one_site_quimb_hairy_bitstrings = [i for i in truncated_one_site_quimb_hairy_bitstrings]
 
     arr_mps_train = mps_encoding(arr_x_train, D_max)
-    squeezed_mps_train = [i.squeeze() for i in arr_mps_train]
+    squeezed_mps_train = [i for i in arr_mps_train]
 
-    multi_site_predictions = squeezed_classifier_predictions(squeezed_multiple_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_quimb_hairy_bitstrings)
-    one_site_predictions = squeezed_classifier_predictions(squeezed_one_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_one_site_quimb_hairy_bitstrings)
+    multi_site_predictions = classifier_predictions(squeezed_multiple_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_quimb_hairy_bitstrings)
+    one_site_predictions = classifier_predictions(squeezed_one_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_one_site_quimb_hairy_bitstrings)
 
     multi_site_result = evaluate_classifier_top_k_accuracy(multi_site_predictions, arr_y_train, 1)
     one_site_result = evaluate_classifier_top_k_accuracy(one_site_predictions, arr_y_train, 1)
@@ -279,8 +279,8 @@ def test_prepare_batched_classifier():
     classifier_data = one_site_prepared_classifier.compress_one_site(D=D_max, orthogonalise=True)
     ortho_squeezed_one_site_mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
 
-    ortho_multi_site_predictions = squeezed_classifier_predictions(ortho_squeezed_multiple_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_quimb_hairy_bitstrings)
-    ortho_one_site_predictions = squeezed_classifier_predictions(ortho_squeezed_one_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_one_site_quimb_hairy_bitstrings)
+    ortho_multi_site_predictions = classifier_predictions(ortho_squeezed_multiple_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_quimb_hairy_bitstrings)
+    ortho_one_site_predictions = classifier_predictions(ortho_squeezed_one_site_mpo_classifier, squeezed_mps_train, squeezed_truncated_one_site_quimb_hairy_bitstrings)
 
     ortho_multi_site_result = evaluate_classifier_top_k_accuracy(multi_site_predictions, arr_y_train, 1)
     ortho_one_site_result = evaluate_classifier_top_k_accuracy(one_site_predictions, arr_y_train, 1)

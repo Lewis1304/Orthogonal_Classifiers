@@ -179,6 +179,11 @@ def test_compress_one_site():
         assert(d1 == d2)
         assert(s1 == s2)
 
+    #Check overlap is for multi site and converted one site.
+    qtn_mpo = data_to_QTN(compressed_multiple_site_mpo.data)
+    overlap1 = mps_train[0].squeeze() @ (qtn_mpo.squeeze() @ truncated_one_site_quimb_hairy_bitstrings[0].squeeze())
+    overlap2 = mps_train[0].squeeze() @ (multiple_site_mpo_classifier.squeeze() @ truncated_quimb_hairy_bitstrings[0].squeeze())
+    assert( np.isclose(abs(overlap1), abs(overlap2)) )
 
 def test_add():
 
@@ -269,4 +274,4 @@ def test_add():
 
 
 if __name__ == '__main__':
-    test_add()
+    test_compress_one_site()

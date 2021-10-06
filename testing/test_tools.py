@@ -68,7 +68,7 @@ mpo_train = mpo_encoding(mps_train, y_train, quimb_hairy_bitstrings)
 mpo_classifier = create_mpo_classifier(mps_train, quimb_hairy_bitstrings, seed=420)
 
 predictions = np.array(
-    classifier_predictions(mpo_classifier, mps_train, quimb_hairy_bitstrings)
+    classifier_predictions(mpo_classifier.squeeze(), mps_train, quimb_hairy_bitstrings)
 )
 
 
