@@ -137,25 +137,71 @@ def all_classes_experiment(
     return accuracies, losses
 
 
-def svd_classifier(dir, mps_images, bitstrings, labels):
+def svd_classifier(dir, mps_images, labels):
+
+    def compress_QTN(projected_q_mpo, D, orthogonalise):
+    # ASSUMES q_mpo IS ALREADY PROJECTED ONTO |0> STATE FOR FIRST (n_sites - n_hairysites) SITES
+    # compress procedure leaves mpo in mixed canonical form
+    # center site is at left most hairest site.
+
+        if projected_q_mpo.tensors[-1].shape[1] > 4:
+            return fMPO_to_QTN(
+                QTN_to_fMPO(projected_q_mpo).compress_one_site(
+                    D=D, orthogonalise=orthogonalise
+                )
+            )
+        return fMPO_to_QTN(
+            QTN_to_fMPO(projected_q_mpo).compress(D=D, orthogonalise=orthogonalise)
+        )
+
+
+    def QTN_to_fMPO(QTN):
+        qtn_data = [site.data for site in QTN.tensors]
+        return fMPO(qtn_data)
+
+
+    def fMPO_to_QTN(fmpo):
+        fmpo_data = fmpo.data
+        return data_to_QTN(fmpo_data)
+
 
     classifier_og = load_qtn_classifier(dir)
-    # print('Original Classifier:', classifier_og)
+    #print('Original Classifier:', classifier_og)
 
-    predictions_og = classifier_predictions(classifier_og, mps_images, bitstrings)
+    #shift all legs to the right. Does not effect performance.
+    classifier_og = fMPO_to_QTN(
+        QTN_to_fMPO(classifier_og).compress_one_site(
+            D=None, orthogonalise=False
+        )
+    )
+
+    hairy_bitstrings_data = create_hairy_bitstrings_data(
+        list(set(labels)), 1, classifier_og.num_tensors, one_site = True
+    )
+    one_site_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, 1, classifier_og.num_tensors, truncated=True
+    )
+
+    predictions_og = classifier_predictions(classifier_og, mps_images, one_site_bitstrings)
     og_acc = evaluate_classifier_top_k_accuracy(predictions_og, labels, 1)
     print("Original Classifier Accuracy:", og_acc)
+
     # print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
 
     """
     Shifted, but not orthogonalised
     """
-    classifier_shifted = compress_QTN(classifier_og, None, False)
+    #classifier_shifted = compress_QTN(classifier_og, None, False)
+    #classifier_shifted = fMPO_to_QTN(
+    #    QTN_to_fMPO(classifier_og).compress_one_site(
+    #        D=None, orthogonalise=False
+    #    )
+    #)
     # print(classifier_shifted)
 
-    # predictions_shifted = classifier_predictions(classifier_shifted, mps_images, bitstrings)
-    # shifted_acc = evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 1)
-    # print('Shifted Classifier Accuracy:', shifted_acc)
+    #predictions_shifted = classifier_predictions(classifier_shifted, mps_images, one_site_bitstrings)
+    #shifted_acc = evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 1)
+    #print('Shifted Classifier Accuracy:', shifted_acc)
     # print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
 
     """
@@ -164,9 +210,10 @@ def svd_classifier(dir, mps_images, bitstrings, labels):
     classifier_ortho = compress_QTN(classifier_og, None, True)
     # print(classifier_ortho)
 
-    predictions_ortho = classifier_predictions(classifier_ortho, mps_images, bitstrings)
+    predictions_ortho = classifier_predictions(classifier_ortho, mps_images, one_site_bitstrings)
     ortho_acc = evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 1)
     print("Orthogonalised Classifier Accuracy:", ortho_acc)
+
     # print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
 
     return og_acc, ortho_acc
@@ -272,20 +319,24 @@ def plot_results(results, title):
 def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
 
     different_classifiers = [
-        "squeezed_one_site_D_total_32_full_size_abs_mse_loss_seed_420",
-        "squeezed_one_site_D_total_32_full_size_mse_loss_seed_420",
-        "squeezed_one_site_D_total_32_full_size_cross_entropy_loss_seed_420",
-        "squeezed_one_site_D_total_32_full_size_stoudenmire_loss_seed_420",
-        "squeezed_one_site_D_total_32_full_size_abs_stoudenmire_loss_seed_420",
+        #"one_site_false_ortho_at_end_false_weird_loss",
+        "one_site_false_ortho_at_end_true_weird_loss",
+        "one_site_true_ortho_at_end_false_weird_loss",
+        "one_site_true_ortho_at_end_true_weird_loss",
+        "random_one_site_false_ortho_at_end_false_weird_loss"
     ]
-    different_names = ["abs_mse", "mse", "cross_entropy", "abs_stoud", "stoud"]
+    different_names = ["2 sites\northo", "1 site\nnon_ortho", "1 site\northo", "random"]
+    #different_names = ["2 sites\nnon_ortho", "2 sites\northo", "1 site\nnon_ortho", "1 site\northo", "random"]
 
-    results_og = []
-    results_ortho = []
-    for c in different_classifiers:
-        og, orth = svd_classifier(c, mps_images, bitstrings, labels)
-        results_og.append(og)
-        results_ortho.append(orth)
+    #results_og = [0.826, 0.821, 0.827, 0.821, 0.786]
+    #results_ortho = [0.802, 0.805, 0.805, 0.808, 0.795]
+    results_og = [0.864, 0.828, 0.869, 0.141]
+    results_ortho = [0.864, 0.804, 0.855, 0.124]
+
+    #for c in different_classifiers:
+    #    og, orth = svd_classifier(c, mps_images, labels)
+    #    results_og.append(og)
+    #    results_ortho.append(orth)
 
     fig, ax1 = plt.subplots()
 
@@ -293,11 +344,11 @@ def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
     # legend_1 = ax1.legend(loc = 'lower right')
     # legend_1.remove()
     ax1.grid(zorder=0.0, alpha=0.4)
-    ax1.set_xlabel("Cost Function", labelpad=10)
+    ax1.set_xlabel("Different Initialisations", labelpad=10)
     ax1.set_ylabel("Top 1- Training Accuracy")  # , color = 'C0')
     ax1.bar(
         np.arange(len(results_og)) - 0.2,
-        results_og,
+        np.round(results_og,3),
         0.4,
         color="C0",
         label="Non-orthogonal",
@@ -305,26 +356,33 @@ def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
     )
     ax1.bar(
         np.arange(len(results_ortho)) + 0.2,
-        results_ortho,
+        np.round(results_ortho,3),
         0.4,
         color="C1",
         label="Orthogonal",
         zorder=3,
     )
 
-    legend_1 = ax1.legend(loc="lower right")
+    legend_1 = ax1.legend(loc="upper right")
 
     # ax1.tick_params(axis="y", labelcolor='C0')
     # ax1.set_xlim([1.75,10.25])
-    ax1.set_yticks(np.arange(0.1, 1.1, 0.1))
+    #ax1.yaxis.set_major_formatter(FormatStrFormatter('%g'))
+
     # ax1.set_xticks(np.arange(2, 11, 1) )
 
     ax1.set_xticks(np.arange(0, len(results_og), 1))
     # ax1.set_xticklabels(different_names[:len(results_og)])
 
     ax1.set_xticklabels(different_names)
-    plt.savefig("different_cost_functions_top_1.pdf")
+    #plt.savefig("different_initialisations_test.pdf")
+    ax1.set_yscale('log')
+    ax1.set_yticks(np.arange(0.1, 1.1, 0.1))
+    #ax1.ticklabel_format(useOffset=False)
+    #ax1.yaxis.set_major_formatter(StrMethodFormatter('{x:.0f}'))
+    #ax1.yaxis.set_minor_formatter(NullFormatter())
 
+    plt.savefig('new_cost_function.pdf',bbox_inches='tight')
     plt.show()
 
 
@@ -349,11 +407,77 @@ def plot_deterministic_mpo_classifier_results():
     plt.show()
 
 
-if __name__ == "__main__":
+def plot_deterministic_initialisation_different_cost_function_results():
 
+    def moving_average(a, n=3):
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        return ret[n - 1:] / n
+
+    different_initialisations = ['one_site_false_ortho_at_end_true_weird_loss', 'one_site_true_ortho_at_end_false_weird_loss', 'one_site_true_ortho_at_end_true_weird_loss', 'random_one_site_false_ortho_at_end_false_weird_loss']
+    #loss_func_list = ['green_loss', 'abs_green_loss', 'mse_loss', 'abs_mse_loss', 'cross_entropy_loss', 'stoudenmire_loss', 'abs_stoudenmire_loss']
+    different_names = ["2 sites\northo", "1 site\nnon_ortho", "1 site\northo", "random"]
+
+
+    for initialisation in different_initialisations:
+        results = []
+        result = np.load('results/' + initialisation + '/accuracies.npy')
+        av = moving_average(result, 2)
+        plt.plot(range(1, len(av) + 1), av, label = initialisation)
+
+    plt.xlim([0,200])
+    plt.yticks([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.] )
+
+    plt.xlabel('Epoch')
+    plt.ylabel('Top-1 Accuracy')
+    #plt.legend(prop={'size': 8})
+    plt.tight_layout()
+    plt.grid(alpha = 0.4)
+    plt.title('New Cost Function Training Results')
+    plt.savefig('figures/'+ 'different_cost_function_training.pdf')
+    plt.show()
+
+
+    assert()
+
+
+def plot_padding_results():
+
+    def moving_average(a, n=3):
+        ret = np.cumsum(a, dtype=float)
+        ret[n:] = ret[n:] - ret[:-n]
+        return ret[n - 1:] / n
+
+    different_initialisations = ['not_full_sized_random_one_site_false', 'not_full_sized_random_one_site_true', 'full_sized_random_one_site_false', 'full_sized_random_one_site_true']
+
+
+    for initialisation in different_initialisations:
+        result = np.load('results/' + initialisation + '/accuracies.npy')
+        av = moving_average(result, 2)
+        plt.plot(range(1, len(av) + 1), av, label = initialisation)
+
+
+    #plt.ylim([0.75,0.83])
+    plt.xlim([0,800])
+    plt.xlabel('Epoch')
+    plt.ylabel('Top-1 Accuracy')
+    plt.legend()
+    plt.tight_layout()
+    plt.grid(alpha = 0.4)
+    plt.title('Padded vs Non-Padded')
+    plt.savefig('figures/'+ 'padded_vs_non_padded.pdf')
+    plt.show()
+
+
+    assert()
+
+
+if __name__ == "__main__":
+    plot_deterministic_initialisation_different_cost_function_results()
+    assert()
     num_samples = 1000
     D_total = 32
-    one_site = True
+    one_site = False
     ortho_at_end = True
 
     data, classifier, bitstrings = initialise_experiment(

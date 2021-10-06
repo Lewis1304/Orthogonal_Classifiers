@@ -4,8 +4,38 @@ from xmps.fMPS import fMPS
 from tqdm import tqdm
 from fMPO_reduced import fMPO
 from tools import load_data, data_to_QTN, arrange_data
-from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, mps_encoding, create_hairy_bitstrings_data, bitstring_data_to_QTN, squeezed_classifier_predictions, mpo_encoding
+from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, mps_encoding, create_hairy_bitstrings_data, bitstring_data_to_QTN, squeezed_classifier_predictions
 from math import log as mlog
+
+"""
+MPO Encoding
+"""
+
+def class_encode_mps_to_mpo(mps, label, q_hairy_bitstrings):
+    n_sites = mps.num_tensors
+    mps_data = [tensor.data for tensor in mps.tensors]
+    # class_encoded_mps.shape = #pixels, dim(d), d(s), i, j
+    class_encoded_mps = [
+        np.array(
+            [mps_data[site] * i for i in q_hairy_bitstrings[label].tensors[site].data]
+        ).transpose(1, 0, 2, 3)
+        for site in range(n_sites)
+    ]
+    return class_encoded_mps
+
+
+def mpo_encoding(mps_train, y_train, q_hairy_bitstrings):
+    n_samples = len(mps_train)
+    mpo_train = [
+        data_to_QTN(
+            class_encode_mps_to_mpo(
+                mps_train[i], y_train[i], q_hairy_bitstrings
+            )
+        )
+        for i in range(n_samples)
+    ]
+    return mpo_train
+
 
 """
 Adding Images
@@ -21,9 +51,7 @@ def add_sublist(*args):
     sub_list_mpos = args[1]
     N = len(sub_list_mpos)
 
-
     c = sub_list_mpos[0]
-
 
     for i in range(1,N):
         c = c.add(sub_list_mpos[i])
@@ -31,20 +59,20 @@ def add_sublist(*args):
         return c.compress_one_site(B_D, orthogonalise=ortho)
     return c.compress(B_D, orthogonalise=ortho)
 
-def adding_batches(list,D,batch_num=2,truncate=True, orthogonalise = False):
+def adding_batches(list_to_add,D,batch_num=2,truncate=True, orthogonalise = False):
     # if batches are not of equal size, the remainder is added
     # at the end- this is a MAJOR problem with equal weightings!
 
-    if len(list) % batch_num != 0:
+    if len(list_to_add) % batch_num != 0:
         if not truncate:
             raise Exception('Batches are not of equal size!')
         else:
-            trun_expo = int(np.log(len(list)) / np.log(batch_num))
-            list = list[:batch_num**trun_expo]
+            trun_expo = int(np.log(len(list_to_add)) / np.log(batch_num))
+            list_to_add = list_to_add[:batch_num**trun_expo]
     result = []
 
-    for i in range(int(len(list)/batch_num)+1):
-        sub_list = list[batch_num*i:batch_num*i+batch_num]
+    for i in range(int(len(list_to_add)/batch_num)+1):
+        sub_list = list_to_add[batch_num*i:batch_num*i+batch_num]
         if len(sub_list) > 0:
             result.append(reduce(add_sublist,((D, orthogonalise),sub_list)))
     return result
@@ -97,9 +125,10 @@ def batch_initialise_classifier():
 
     #Add images together- forming classifier initialisation
     fMPO_classifier = prepare_batched_classifier(train_data, train_labels, D_total, batch_num, one_site = one_site)
+    qtn_classifier = data_to_QTN(fMPO_classifier.data).squeeze()
     qtn_classifier_data = fMPO_classifier.compress_one_site(D=D_total, orthogonalise=ortho_at_end)
     qtn_classifier = data_to_QTN(qtn_classifier_data.data).squeeze()
-
+    
     #Evaluating Classifier
     n_hairy_sites = 1
     n_sites = 10

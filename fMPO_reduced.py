@@ -236,7 +236,6 @@ class fMPO:
 
         # test2 = self
         # print([i.shape for i in test2])
-
         return self
 
     def compress_one_site(self, D=None, orthogonalise=False):
@@ -245,19 +244,6 @@ class fMPO:
 
         :param D: bond dimension to truncate to during left sweep
         """
-
-        # Check that right most site is hairy, and no others are.
-        # Since procedure only works for truncated mpo
-        for i, site in enumerate(self):
-            if i < self.L - 1:
-                #assert site.shape[1] == 1
-                pass
-            else:
-                #assert site.shape[1] == 16
-                pass
-
-        if D is not None:
-            self.D = min(D, self.D)
 
         def split(datum):
             """split: Do SVD and reshape A matrix
@@ -277,6 +263,22 @@ class fMPO:
             """
             u = expand_dims(u.reshape(d, i, -1), 1)
             v = expand_dims(v.reshape(-1, s, j), 0).transpose(0, 2, 1, 3)
+            return u, diag(S), v
+
+        def split_back(datum):
+            """split: Do SVD and reshape A matrix
+            :param M: matrix
+            """
+            d, s, i, j = datum.shape
+            """
+            reshapes s with d and j such that M.shape = (i,s*j*d)
+            """
+            M = datum.transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            u, S, v = svd(M, full_matrices=False)
+
+            u = expand_dims(expand_dims(u.reshape(i, -1), 0), 0)
+            v = v.reshape(-1, s, j, d).transpose(3, 1, 0, 2)
+
             return u, diag(S), v
 
         def truncate_MPO(A, S, V, D):
@@ -300,6 +302,7 @@ class fMPO:
         for m in range(len(self.data)):
 
             # sort out canonicalisation
+
             if m + 1 < len(self.data):
                 A, S, V = split(self[m])
                 self[m], S, V = truncate_MPO(A, S, V, D)
@@ -318,6 +321,7 @@ class fMPO:
                 )
             else:
                 d, s, i, j = self[m].shape
+
                 if orthogonalise:
 
                     self[m] = (
@@ -326,6 +330,30 @@ class fMPO:
                         .transpose(0, 2, 1, 3)
                     )
 
+
+        for m in range(len(self.data))[::-1]:
+            A, S, V = split_back(self[m])
+            U, S, self[m] = truncate_MPO(A, S, V, D)
+
+            if m > 0:
+                """
+                ncon: Contract self[m-1] j leg with U@S i leg
+                transpose: take (d_1,s_1,i_1,d_2,s_2,j_2) to (d_1,d_2,s_1,s_2,i_1,j_2)
+                reshape: group together d and s legs such that .shape = (d_1d_2,s_1s_2,i_1,j_2)
+                """
+                d_1, s_1, i_1, j_1 = self[m - 1].shape
+                d_2, s_2, i_2, j_2 = (U @ S).shape
+                #print('self[m-1]: ', self[m-1].shape)
+                #print('U@S: ', (U @ S).shape)
+                self[m - 1] = (
+                    ncon((self[m - 1], U @ S), [[-1, -2, -3, 4], [-5, -6, 4, -7]])
+                    .transpose(0, 3, 1, 4, 2, 5)
+                    .reshape(d_1 * d_2, s_1 * s_2, i_1, j_2)
+                )
+            #d, s, i, j = self[m].shape
+            #test = self[m].transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            #testh = test.conj().T
+            #print(np.diag(test@testh))
         return self
 
     def add(self, other):
@@ -343,19 +371,7 @@ class fMPO:
 
         return fMPO(new_data)
 
-    def apply_mpo_from_bottom(self,other):
-        assert(self.L == other.L)
-        data = self.data
-        other = other.data
-
-        new_data = []
-        for i,j in zip(data,other):
-            d_1,s_1,i_1,j_1 = i.shape
-            d_2,i_2,j_2 = j.shape
-            new_data.append(ncon((i,j),[[-1,2,-3,-4],[2,-5,-6]]).transpose(0,1,3,2,4).reshape(d_1,i_1*i_2,j_1*j_2))
-
-        return fMPS(new_data)
-
+    
 
 if __name__ == "__main__":
     pass

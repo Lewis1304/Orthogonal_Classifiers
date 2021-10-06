@@ -274,7 +274,7 @@ def test_data_to_QTN():
 
     #Check untruncated multiple sites
     class_encoded_mpos = [
-        class_encode_mps_to_mpo(mps_train[0], label, quimb_hairy_bitstrings, n_sites)
+        class_encode_mps_to_mpo(mps_train[0], label, quimb_hairy_bitstrings)
         for label in possible_labels
     ]
     quimb_encoded_mpos = [data_to_QTN(mpo) for mpo in class_encoded_mpos]
@@ -289,7 +289,7 @@ def test_data_to_QTN():
 
     #Check untruncated one site
     one_site_class_encoded_mpos = [
-        class_encode_mps_to_mpo(mps_train[0], label, one_site_quimb_hairy_bitstrings, n_sites)
+        class_encode_mps_to_mpo(mps_train[0], label, one_site_quimb_hairy_bitstrings)
         for label in possible_labels
     ]
     one_site_quimb_encoded_mpos = [data_to_QTN(mpo) for mpo in one_site_class_encoded_mpos]
@@ -305,7 +305,7 @@ def test_data_to_QTN():
     #Check truncated multiple sites
     truncated_class_encoded_mpos = [
         class_encode_mps_to_mpo(
-            mps_train[0], label, truncated_quimb_hairy_bitstrings, n_sites
+            mps_train[0], label, truncated_quimb_hairy_bitstrings
         )
         for label in possible_labels
     ]
@@ -325,7 +325,7 @@ def test_data_to_QTN():
     #Check truncated one site
     one_site_truncated_class_encoded_mpos = [
         class_encode_mps_to_mpo(
-            mps_train[0], label, truncated_one_site_quimb_hairy_bitstrings, n_sites
+            mps_train[0], label, truncated_one_site_quimb_hairy_bitstrings
         )
         for label in possible_labels
     ]

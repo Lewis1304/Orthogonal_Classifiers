@@ -18,6 +18,7 @@ sys.path.append("../")
 from tools import *
 from variational_mpo_classifiers import *
 from deterministic_mpo_classifier import mpo_encoding, class_encode_mps_to_mpo
+from fMPO_reduced import fMPO
 
 from xmps.ncon import ncon as nc
 
@@ -46,173 +47,65 @@ one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites, one_site=True
 )
 
-quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
-)
 truncated_quimb_hairy_bitstrings = bitstring_data_to_QTN(
     hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
 )
-one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
-)
+
 truncated_one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
     one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
 )
 
-
-fmps_images = [image_to_mps(image, D_total) for image in x_train]
-
 mps_train = mps_encoding(x_train, D_total)
-mpo_train = mpo_encoding(mps_train, y_train, quimb_hairy_bitstrings)
 
-mpo_classifier = create_mpo_classifier(mps_train, quimb_hairy_bitstrings, seed=420)
+multiple_site_mpo_classifier = create_mpo_classifier(mps_train, truncated_quimb_hairy_bitstrings, seed=420)
+multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
 
-predictions = np.array(
-    classifier_predictions(mpo_classifier, mps_train, quimb_hairy_bitstrings)
-)
+one_site_mpo_classifier = create_mpo_classifier(mps_train, truncated_one_site_quimb_hairy_bitstrings, seed=420)
+one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
 
-def test_compress():
-    pass
+mpo_train = mpo_encoding(mps_train, y_train, truncated_quimb_hairy_bitstrings)
+fMPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in mpo_train]
 
-def test_compress_one_site():
-    pass
-
-def test_add():
-    pass
-
-def test_apply_mpo_from_bottom():
-    pass
-
-"""
-def test_add_mpos():
-
-    # Check mpos are added in the right place (check for 3, for speed)
-    added_mpos = mpo_train[0]
-    for mpo in mpo_train[1:3]:
-        added_mpos = add_mpos(added_mpos, mpo)
-
-    # Check data of added MPOs (checks shape too).
-    for i, (site0, site1, site2, site3) in enumerate(
-        zip(
-            mpo_train[0].tensors,
-            mpo_train[1].tensors,
-            mpo_train[2].tensors,
-            added_mpos.tensors,
-        )
-    ):
-
-        if i == 0:
-            assert np.array_equal(site0.data, site3.data[:, :, :, : site0.shape[3]])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, :, site0.shape[3] : site0.shape[3] + site1.shape[3]],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    :,
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
-
-        elif i == (mpo_train[0].num_tensors - 1):
-            assert np.array_equal(site0.data, site3.data[:, :, : site0.shape[2], :])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, site0.shape[2] : site0.shape[2] + site1.shape[2], :],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    :,
-                ],
-            )
-
-        else:
-            assert np.array_equal(
-                site0.data, site3.data[:, :, : site0.shape[2], : site0.shape[3]]
-            )
-            assert np.array_equal(
-                site1.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2] : site0.shape[2] + site1.shape[2],
-                    site0.shape[3] : site0.shape[3] + site1.shape[3],
-                ],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
-"""
-
-"""
+# TODO: Implement orthogonalisation test
 def test_compress():
 
-    # Truncated mpo needed otherwise dim(s) explodes when canonicalising
-    truncated_mpo_classifier_data = [
-        site.data[:, :1, :, :] if i < (n_sites - n_hairysites) else site.data
-        for i, site in enumerate(mpo_classifier.tensors)
-    ]
-    truncated_mpo_classifier = data_to_QTN(truncated_mpo_classifier_data)
-    truncated_mpo_classifier /= (
-        truncated_mpo_classifier.H @ truncated_mpo_classifier
-    ) ** 0.5
+    #Check norm is still 1
+    #Multiple site
+    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=5, orthogonalise=False)
+    compressed_qtn_mpo = data_to_QTN(compressed_multiple_site_mpo.data)
+    assert np.isclose(abs(compressed_qtn_mpo.H @ compressed_qtn_mpo), 1)
 
-    compressed_mpo = compress_QTN(truncated_mpo_classifier, D=None, orthogonalise=False)
+    #Check overlap between initial classifier
+    #and compressed mpo with D=None is 1.
+    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=None, orthogonalise=False)
+    compressed_qtn_mpo = data_to_QTN(compressed_multiple_site_mpo.data).squeeze()
 
-    # Check norm is still 1
-    assert np.isclose((compressed_mpo.H @ compressed_mpo), 1)
+    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    qtn_mpo = data_to_QTN(multiple_site_fMPO.data).squeeze()
+    assert np.isclose(abs(compressed_qtn_mpo.H @ qtn_mpo), 1)
 
-    # Check overlap between initial classifier
-    # and compressed mpo with D=None is 1.
-    assert np.isclose((truncated_mpo_classifier.H @ compressed_mpo).norm(), 1)
 
     # Check canonicl form- compress procedure leaves mpo in mixed canonical form
     # center site is at left most hairest site.
-    for n, site in enumerate(compressed_mpo.tensors):
+    compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=None, orthogonalise=False)
+    for n, site in enumerate(compressed_multiple_site_mpo.data):
         d, s, i, j = site.shape
-        if n < (n_sites - n_hairysites):
-            # reshape from (d, s, i, j) --> (d*j, s*i). As SVD was done like that.
-            U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
-            Uh = U.conj().T
-            assert np.array_equal(np.round(Uh @ U, 5), np.eye(s * i))
-        else:
-            # reshape from (d, s, i, j) --> (i, s*j*d). As SVD was done like that.
-            U = site.data.transpose(2, 1, 3, 0).reshape(i, s * j * d)
-            Uh = U.conj().T
-            assert np.array_equal(np.round(U @ Uh, 5), np.eye(i))
+        #reshape from (d, s, i, j) --> (i, s*i*d).
+        #As SVD on the return sweep was done like that.
+        #U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
+        U = site.transpose(2, 1, 3, 0).reshape(i, s * j * d)
+        Uh = U.conj().T
+        assert np.array_equal(np.round(U @ Uh, 5), np.eye(i))
 
     # Check compressed has right shape for range of different Ds
     for max_D in range(1, 5):
-        compressed_mpo = compress_QTN(
-            truncated_mpo_classifier, D=max_D, orthogonalise=False
-        )
+        multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+        compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=max_D, orthogonalise=False)
+
         for i, (site0, site1) in enumerate(
-            zip(compressed_mpo.tensors, truncated_mpo_classifier)
+            zip(compressed_multiple_site_mpo, multiple_site_fMPO)
         ):
 
             d0, s0, i0, j0 = site0.shape
@@ -223,37 +116,157 @@ def test_compress():
 
             assert i0 <= max_D
             assert j0 <= max_D
-    # TODO: Orthogonalisation test
-"""
-"""
+
+# TODO: Implement orthogonalisation test
 def test_compress_one_site():
 
-    one_site_mpo_train = mpo_encoding(
-        mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
-    )
-    one_site_mpo_classifier = create_mpo_classifier(one_site_mpo_train, seed=420)
-
-    one_site_compressed_mpo = compress_QTN(
-        one_site_mpo_classifier, D=None, orthogonalise=False
-    )
-
-    # Check norm is still 1
-    assert np.isclose((one_site_compressed_mpo.H @ one_site_compressed_mpo), 1)
+    #Check norm is still 1
+    #One site
+    one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
+    compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+    compressed_qtn_mpo = data_to_QTN(compressed_one_site_mpo.data)
+    assert np.isclose(abs(compressed_qtn_mpo.squeeze().H @ compressed_qtn_mpo.squeeze()), 1)
 
     # Check overlap between initial classifier
     # and compressed mpo with D=None is 1.
-    assert np.isclose((one_site_mpo_classifier.H @ one_site_compressed_mpo).norm(), 1)
+    one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
+    compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+    compressed_qtn_mpo = data_to_QTN(compressed_one_site_mpo.data)
 
-    orthogonal_one_site_mpo = compress_QTN(
-        one_site_mpo_classifier, D=None, orthogonalise=True
-    )
-    # Check Canonical form and orthogonal
-    for k, site in enumerate(orthogonal_one_site_mpo.tensors):
-        d, s, i, j = site.data.shape
-        U = site.data.transpose(0, 2, 1, 3).reshape(d * i, s * j)
+    one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
+    qtn_mpo = data_to_QTN(one_site_fMPO.data)
+    assert np.isclose(abs(qtn_mpo.squeeze().H @ compressed_qtn_mpo.squeeze()), 1)
+
+    #Check each site is unitary. i.e. in canonical form:
+    #U @ U.H = I
+    compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+
+    for n, site in enumerate(compressed_one_site_mpo.data):
+        d, s, i, j = site.shape
+        #reshape from (d, s, i, j) --> (i, s*i*d).
+        #As SVD on the return sweep was done like that.
+        #U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
+        U = site.transpose(2, 1, 3, 0).reshape(i, s * j * d)
         Uh = U.conj().T
-        if k < one_site_compressed_mpo.num_tensors - 1:
-            assert np.isclose(Uh @ U, np.eye(s * j)).all()
+        assert np.array_equal(np.round(U @ Uh, 5), np.eye(i))
+
+    #Check compressed has right shape for range of different Ds
+    for max_D in range(1, 5):
+        one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
+        compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=max_D, orthogonalise=False)
+
+        for i, (site0, site1) in enumerate(
+            zip(compressed_one_site_mpo, one_site_fMPO)
+        ):
+
+            d0, s0, i0, j0 = site0.shape
+            d1, s1, i1, j1 = site1.shape
+
+            assert d0 == d1
+            assert s0 == s1
+
+            assert i0 <= max_D
+            assert j0 <= max_D
+
+    #Check using compress_one_site on multisite mpo outputs one site mpo
+    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    compressed_multiple_site_mpo = multiple_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+
+    for k, (site1, site2) in enumerate(zip(compressed_multiple_site_mpo.data, compressed_one_site_mpo.data)):
+        d1, s1, i1, j1 = site1.shape
+        d2, s2, i2, j2 = site2.shape
+
+        assert(d1 == d2)
+        assert(s1 == s2)
+
+
+def test_add():
+
+    # Check mpos are added in the right place (check for 3, for speed)
+    added_mpos = fMPOs[0]
+
+    for mpo in fMPOs[1:3]:
+        added_mpos = added_mpos.add(mpo)
+
+    # Check data of added MPOs (checks shape too).
+    for i, (site0, site1, site2, site3) in enumerate(
+        zip(
+            fMPOs[0].data,
+            fMPOs[1].data,
+            fMPOs[2].data,
+            added_mpos.data,
+        )
+    ):
+
+        if i == 0:
+            assert np.array_equal(site0, site3[:, :, :, : site0.shape[3]])
+            assert np.array_equal(
+                site1,
+                site3[:, :, :, site0.shape[3] : site0.shape[3] + site1.shape[3]],
+            )
+            assert np.array_equal(
+                site2,
+                site3[
+                    :,
+                    :,
+                    :,
+                    site0.shape[3]
+                    + site1.shape[3] : site0.shape[3]
+                    + site1.shape[3]
+                    + site2.shape[3],
+                ],
+            )
+
+        elif i == (fMPOs[0].L - 1):
+            assert np.array_equal(site0, site3[:, :, : site0.shape[2], :])
+            assert np.array_equal(
+                site1,
+                site3[:, :, site0.shape[2] : site0.shape[2] + site1.shape[2], :],
+            )
+            assert np.array_equal(
+                site2,
+                site3[
+                    :,
+                    :,
+                    site0.shape[2]
+                    + site1.shape[2] : site0.shape[2]
+                    + site1.shape[2]
+                    + site2.shape[2],
+                    :,
+                ],
+            )
+
         else:
-            assert np.isclose(U @ Uh, np.eye(d * i)).all()
-"""
+            assert np.array_equal(
+                site0, site3[:, :, : site0.shape[2], : site0.shape[3]]
+            )
+            assert np.array_equal(
+                site1,
+                site3[
+                    :,
+                    :,
+                    site0.shape[2] : site0.shape[2] + site1.shape[2],
+                    site0.shape[3] : site0.shape[3] + site1.shape[3],
+                ],
+            )
+            assert np.array_equal(
+                site2,
+                site3[
+                    :,
+                    :,
+                    site0.shape[2]
+                    + site1.shape[2] : site0.shape[2]
+                    + site1.shape[2]
+                    + site2.shape[2],
+                    site0.shape[3]
+                    + site1.shape[3] : site0.shape[3]
+                    + site1.shape[3]
+                    + site2.shape[3],
+                ],
+            )
+
+
+
+
+if __name__ == '__main__':
+    test_add()
