@@ -27,6 +27,7 @@ from tools import *
 Encode Bitstrings
 """
 
+
 def create_hairy_bitstrings_data(
     possible_labels, n_hairysites, n_sites, one_site=False
 ):
@@ -84,6 +85,7 @@ def create_hairy_bitstrings_data(
 """
 MPS Encoding
 """
+
 
 def mps_encoding(images, D=2):
     mps_images = [fMPS_to_QTN(image_to_mps(image, D)) for image in images]
@@ -145,7 +147,9 @@ def create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=None, full_sized=F
     return mpo_classifier
 
 
-def create_mpo_classifier_from_initialised_classifier(initialised_classifier, seed=None):
+def create_mpo_classifier_from_initialised_classifier(
+    initialised_classifier, seed=None
+):
 
     # Create MPO classifier
     tensors = []
@@ -171,7 +175,6 @@ def create_mpo_classifier_from_initialised_classifier(initialised_classifier, se
     return mpo_classifier
 
 
-
 """
 Train Classifier
 """
@@ -179,7 +182,11 @@ Train Classifier
 
 def green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
-        anp.real(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())) ** 2
+        anp.real(
+            mps_train[i].squeeze().H
+            @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())
+        )
+        ** 2
         for i in range(len(mps_train))
     ]
     return -np.sum(overlaps) / len(mps_train)
@@ -187,7 +194,11 @@ def green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
 
 def abs_green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
-        abs(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())) ** 2
+        abs(
+            mps_train[i].squeeze().H
+            @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())
+        )
+        ** 2
         for i in range(len(mps_train))
     ]
     return -np.sum(overlaps) / len(mps_train)
@@ -195,7 +206,13 @@ def abs_green_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
 
 def mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
-        (anp.real(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())) - 1)
+        (
+            anp.real(
+                mps_train[i].squeeze().H
+                @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())
+            )
+            - 1
+        )
         ** 2
         for i in range(len(mps_train))
     ]
@@ -204,7 +221,14 @@ def mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
 
 def abs_mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
-        (abs(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())) - 1) ** 2
+        (
+            abs(
+                mps_train[i].squeeze().H
+                @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())
+            )
+            - 1
+        )
+        ** 2
         for i in range(len(mps_train))
     ]
     return np.sum(overlaps) / len(mps_train)
@@ -212,7 +236,12 @@ def abs_mse_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
 
 def cross_entropy_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
-        anp.log(abs(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())))
+        anp.log(
+            abs(
+                mps_train[i].squeeze().H
+                @ (classifier @ q_hairy_bitstrings[y_train[i]].squeeze())
+            )
+        )
         for i in range(len(mps_train))
     ]
     return -np.sum(overlaps) / len(mps_train)
@@ -223,7 +252,10 @@ def stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
         [
             (
-                anp.real(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[label].squeeze()))
+                anp.real(
+                    mps_train[i].squeeze().H
+                    @ (classifier @ q_hairy_bitstrings[label].squeeze())
+                )
                 - int(y_train[i] == label)
             )
             ** 2
@@ -239,7 +271,10 @@ def abs_stoudenmire_loss(classifier, mps_train, q_hairy_bitstrings, y_train):
     overlaps = [
         [
             (
-                abs(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[label].squeeze()))
+                abs(
+                    mps_train[i].squeeze().H
+                    @ (classifier @ q_hairy_bitstrings[label].squeeze())
+                )
                 - int(y_train[i] == label)
             )
             ** 2
@@ -262,10 +297,14 @@ Evaluate classifier
 def classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings):
     # assumes mps_test is aligned with appropiate labels, y_test
     predictions = [
-        [abs(test_image.squeeze().H @ (mpo_classifier @ b.squeeze())) for b in q_hairy_bitstrings]
+        [
+            abs(test_image.squeeze().H @ (mpo_classifier @ b.squeeze()))
+            for b in q_hairy_bitstrings
+        ]
         for test_image in mps_test
     ]
     return predictions
+
 
 def evaluate_classifier_top_k_accuracy(predictions, y_test, k):
     top_k_predicitions = [

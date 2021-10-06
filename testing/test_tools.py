@@ -32,7 +32,7 @@ n_train = 100
 n_test = 100
 D_total = 10
 
-x_train, y_train, x_test, y_test = load_data(n_train, n_test, equal_numbers = True)
+x_train, y_train, x_test, y_test = load_data(n_train, n_test, equal_numbers=True)
 
 possible_labels = list(set(y_train))
 n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
@@ -92,33 +92,56 @@ def test_load_data():
     assert list(set(y_train)) == list(range(10))
     assert list(set(y_test)) == list(range(10))
 
-    #Test for equal classes, equal number of each class.
-    assert(np.array([len(x_train[y_train == label]) == (n_train // 10) for label in possible_labels]).all())
-
+    # Test for equal classes, equal number of each class.
+    assert np.array(
+        [len(x_train[y_train == label]) == (n_train // 10) for label in possible_labels]
+    ).all()
 
 
 def test_arrange_data():
-    #Requires equal_numbers to be true
+    # Requires equal_numbers to be true
 
-    #test random
-    random_x_train, random_y_train = arrange_data(x_train, y_train, arrangement = 'random')
-    assert(not np.array_equal(random_x_train, x_train))
-    assert(not np.array_equal(random_y_train, y_train))
+    # test random
+    random_x_train, random_y_train = arrange_data(
+        x_train, y_train, arrangement="random"
+    )
+    assert not np.array_equal(random_x_train, x_train)
+    assert not np.array_equal(random_y_train, y_train)
 
-    #test one of each
-    one_of_each_x_train, one_of_each_y_train = arrange_data(x_train, y_train, arrangement = 'one of each')
+    # test one of each
+    one_of_each_x_train, one_of_each_y_train = arrange_data(
+        x_train, y_train, arrangement="one of each"
+    )
     n_samples_per_class = n_train // len(possible_labels)
-    assert(np.array([
-            np.array_equal
-            (
-            one_of_each_y_train[i*len(possible_labels):(i+1)*len(possible_labels)],
-            possible_labels
+    assert np.array(
+        [
+            np.array_equal(
+                one_of_each_y_train[
+                    i * len(possible_labels) : (i + 1) * len(possible_labels)
+                ],
+                possible_labels,
             )
-            for i in range(n_samples_per_class)]).all())
+            for i in range(n_samples_per_class)
+        ]
+    ).all()
 
-    #test one class
-    one_class_x_train, one_class_y_train = arrange_data(x_train, y_train, arrangement = 'one class')
-    assert(np.array([list(set(one_class_y_train[i*n_samples_per_class:(i+1)*n_samples_per_class])) == [i] for i in possible_labels]).all())
+    # test one class
+    one_class_x_train, one_class_y_train = arrange_data(
+        x_train, y_train, arrangement="one class"
+    )
+    assert np.array(
+        [
+            list(
+                set(
+                    one_class_y_train[
+                        i * n_samples_per_class : (i + 1) * n_samples_per_class
+                    ]
+                )
+            )
+            == [i]
+            for i in possible_labels
+        ]
+    ).all()
 
 
 def test_bitstrings():
@@ -272,7 +295,7 @@ def test_fMPS_to_QTN():
 
 def test_data_to_QTN():
 
-    #Check untruncated multiple sites
+    # Check untruncated multiple sites
     class_encoded_mpos = [
         class_encode_mps_to_mpo(mps_train[0], label, quimb_hairy_bitstrings)
         for label in possible_labels
@@ -286,27 +309,26 @@ def test_data_to_QTN():
         ):
             assert np.array_equal(data, q_data.data)
 
-
-    #Check untruncated one site
+    # Check untruncated one site
     one_site_class_encoded_mpos = [
         class_encode_mps_to_mpo(mps_train[0], label, one_site_quimb_hairy_bitstrings)
         for label in possible_labels
     ]
-    one_site_quimb_encoded_mpos = [data_to_QTN(mpo) for mpo in one_site_class_encoded_mpos]
+    one_site_quimb_encoded_mpos = [
+        data_to_QTN(mpo) for mpo in one_site_class_encoded_mpos
+    ]
     # Check converting to quimb tensor does not alter the data.
     # Check for all labels.
     for label in possible_labels:
         for data, q_data in zip(
-            one_site_class_encoded_mpos[label], one_site_quimb_encoded_mpos[label].tensors
+            one_site_class_encoded_mpos[label],
+            one_site_quimb_encoded_mpos[label].tensors,
         ):
             assert np.array_equal(data, q_data.data)
 
-
-    #Check truncated multiple sites
+    # Check truncated multiple sites
     truncated_class_encoded_mpos = [
-        class_encode_mps_to_mpo(
-            mps_train[0], label, truncated_quimb_hairy_bitstrings
-        )
+        class_encode_mps_to_mpo(mps_train[0], label, truncated_quimb_hairy_bitstrings)
         for label in possible_labels
     ]
     truncated_quimb_encoded_mpos = [
@@ -321,8 +343,7 @@ def test_data_to_QTN():
         ):
             assert np.array_equal(data, q_data.data)
 
-
-    #Check truncated one site
+    # Check truncated one site
     one_site_truncated_class_encoded_mpos = [
         class_encode_mps_to_mpo(
             mps_train[0], label, truncated_one_site_quimb_hairy_bitstrings
@@ -369,7 +390,7 @@ def test_save_and_load_qtn_classifier():
 
     # Test squeezed classifier loading (truncated)
     truncated_mpo_classifier = create_mpo_classifier(
-        mps_train,truncated_quimb_hairy_bitstrings, seed=420
+        mps_train, truncated_quimb_hairy_bitstrings, seed=420
     ).squeeze()
 
     save_qtn_classifier(truncated_mpo_classifier, "pytest_squeezed_truncated")
@@ -377,7 +398,9 @@ def test_save_and_load_qtn_classifier():
         "pytest_squeezed_truncated"
     )
 
-    truncated_mpo_classifier = create_mpo_classifier(mps_train, truncated_quimb_hairy_bitstrings, seed=420)
+    truncated_mpo_classifier = create_mpo_classifier(
+        mps_train, truncated_quimb_hairy_bitstrings, seed=420
+    )
 
     assert np.array(
         [
@@ -389,44 +412,49 @@ def test_save_and_load_qtn_classifier():
         ]
     ).all()
 
+
 def test_pad_qtn_classifier():
     padded_classifier = pad_qtn_classifier(mpo_classifier)
-    D_max = np.max([np.max(tensor.shape, axis = -1) for tensor in mpo_classifier.tensors])
+    D_max = np.max([np.max(tensor.shape, axis=-1) for tensor in mpo_classifier.tensors])
 
-    #Check shape
-    for k, (site_a, site_b) in enumerate(zip(mpo_classifier.tensors, padded_classifier.tensors)):
+    # Check shape
+    for k, (site_a, site_b) in enumerate(
+        zip(mpo_classifier.tensors, padded_classifier.tensors)
+    ):
         d1, s1, i1, j1 = site_a.shape
         d2, s2, i2, j2 = site_b.shape
 
         if k == 0:
-            assert(d1 == d2)
-            assert(s1 == s2)
-            assert(i2 == 1)
-            assert(j2 == D_max)
+            assert d1 == d2
+            assert s1 == s2
+            assert i2 == 1
+            assert j2 == D_max
         elif k == (padded_classifier.num_tensors - 1):
-            assert(d1 == d2)
-            assert(s1 == s2)
-            assert(i2 == D_max)
-            assert(j2 == 1)
+            assert d1 == d2
+            assert s1 == s2
+            assert i2 == D_max
+            assert j2 == 1
         else:
-            assert(d1 == d2)
-            assert(s1 == s2)
-            assert(i2 == D_max)
-            assert(j2 == D_max)
+            assert d1 == d2
+            assert s1 == s2
+            assert i2 == D_max
+            assert j2 == D_max
 
-    #Check data is encoded
+    # Check data is encoded
     for site_a, site_b in zip(mpo_classifier.tensors, padded_classifier.tensors):
         d1, s1, i1, j1 = site_a.shape
         d2, s2, i2, j2 = site_b.shape
 
-        #check data is there
-        assert(np.array_equal(site_b.data[:d1,:s1,:i1,:j1], site_a.data))
-        #check rest of data is just zeros
-        assert(np.array_equal(site_b.data[d1:,s1:,i1:,j1:], np.zeros((d2-d1,s2-s1,i2-i1,j2-j1))))
-
+        # check data is there
+        assert np.array_equal(site_b.data[:d1, :s1, :i1, :j1], site_a.data)
+        # check rest of data is just zeros
+        assert np.array_equal(
+            site_b.data[d1:, s1:, i1:, j1:],
+            np.zeros((d2 - d1, s2 - s1, i2 - i1, j2 - j1)),
+        )
 
 
 if __name__ == "__main__":
     # test_bitstring_data_to_QTN()
-    #test_save_and_load_qtn_classifier()
+    # test_save_and_load_qtn_classifier()
     test_pad_qtn_classifier()

@@ -21,7 +21,7 @@ Data tools
 """
 
 
-def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
+def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False):
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
@@ -41,8 +41,13 @@ def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
         n_train_per_class = n_train // len(list(set(y_train)))
         n_test_per_class = n_test // len(list(set(y_train)))
 
-        grouped_x_train = [x_train[y_train == label][:n_train_per_class] for label in list(set(y_train))]
-        grouped_x_test = [x_test[y_test == label][:n_test_per_class] for label in list(set(y_test))]
+        grouped_x_train = [
+            x_train[y_train == label][:n_train_per_class]
+            for label in list(set(y_train))
+        ]
+        grouped_x_test = [
+            x_test[y_test == label][:n_test_per_class] for label in list(set(y_test))
+        ]
 
         train_data = np.array([images for images in zip(*grouped_x_train)])
         train_labels = [list(set(y_train)) for _ in train_data]
@@ -61,26 +66,34 @@ def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
 
     return x_train, y_train, x_test, y_test
 
+
 def arrange_data(data, labels, **kwargs):
 
-    if list(kwargs.values())[0] == 'random':
+    if list(kwargs.values())[0] == "random":
         r_train = np.arange(len(data))
         np.random.shuffle(r_train)
         return data[r_train], labels[r_train]
 
-    elif list(kwargs.values())[0] == 'one of each':
+    elif list(kwargs.values())[0] == "one of each":
         return data, labels
 
-    elif list(kwargs.values())[0] == 'one class':
+    elif list(kwargs.values())[0] == "one class":
         possible_labels = list(set(labels))
-        data = [[data[i] for i in range(k, len(data), len(possible_labels))] for k in possible_labels]
+        data = [
+            [data[i] for i in range(k, len(data), len(possible_labels))]
+            for k in possible_labels
+        ]
         data = np.array([image for label in data for image in label])
 
-        labels = [[labels[i] for i in range(k, len(labels), len(possible_labels))] for k in possible_labels]
+        labels = [
+            [labels[i] for i in range(k, len(labels), len(possible_labels))]
+            for k in possible_labels
+        ]
         labels = np.array([image for label in labels for image in label])
         return data, labels
     else:
-        raise Exception('Arrangement type not understood')
+        raise Exception("Arrangement type not understood")
+
 
 """
 Bitstring tools
@@ -208,8 +221,9 @@ def load_qtn_classifier(dir):
 
     return data_to_QTN(data)
 
+
 def pad_qtn_classifier(QTN):
-    D_max = np.max([np.max(tensor.shape, axis = -1) for tensor in QTN.tensors])
+    D_max = np.max([np.max(tensor.shape, axis=-1) for tensor in QTN.tensors])
     qtn_data = [site.data for site in QTN.tensors]
 
     data_padded = []
@@ -217,15 +231,16 @@ def pad_qtn_classifier(QTN):
         d, s, i, j = site.shape
 
         if k == 0:
-            site_padded = np.pad(site, ((0,0),(0,0),(0,0),(0,D_max-j)))
+            site_padded = np.pad(site, ((0, 0), (0, 0), (0, 0), (0, D_max - j)))
         elif k == (len(qtn_data) - 1):
-            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,0)))
+            site_padded = np.pad(site, ((0, 0), (0, 0), (0, D_max - i), (0, 0)))
         else:
-            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,D_max-j)))
+            site_padded = np.pad(site, ((0, 0), (0, 0), (0, D_max - i), (0, D_max - j)))
 
         data_padded.append(site_padded)
 
     return data_to_QTN(data_padded)
+
 
 if __name__ == "__main__":
     pass
