@@ -69,7 +69,7 @@ truncated_mpo_classifier = create_mpo_classifier(mps_train, truncated_quimb_hair
 one_site_truncated_mpo_classifier = create_mpo_classifier(mps_train, truncated_one_site_quimb_hairy_bitstrings, seed=420)
 
 predictions = np.array(
-    classifier_predictions(mpo_classifier, mps_train, quimb_hairy_bitstrings)
+    classifier_predictions(mpo_classifier.squeeze(), mps_train, quimb_hairy_bitstrings)
 )
 
 def test_create_hairy_bitstrings_data():
@@ -307,11 +307,11 @@ def test_loss_functions():
 
                 if y_train[i] == label:
                     overlap = (
-                        np.real(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
+                        np.real(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[label].squeeze()))
                     - 1) ** 2
                 else:
                     overlap = np.real(
-                        mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
+                        mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[label].squeeze())
                     ) ** 2
                 overlaps.append(overlap)
         #print(overlaps)
@@ -328,11 +328,11 @@ def test_loss_functions():
 
                 if y_train[i] == label:
                     overlap = (
-                        abs(mps_train[i].H @ (classifier @ q_hairy_bitstrings[label]))
+                        abs(mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[label].squeeze()))
                     - 1) ** 2
                 else:
                     overlap = np.real(
-                        mps_train[i].H @ (classifier @ q_hairy_bitstrings[label])
+                        mps_train[i].squeeze().H @ (classifier @ q_hairy_bitstrings[label].squeeze())
                     ) ** 2
                 overlaps.append(overlap)
         #print(overlaps)
@@ -347,69 +347,69 @@ def test_loss_functions():
     ]
 
     squeezed_bitstrings = [
-        i.squeeze() for i in truncated_one_site_quimb_hairy_bitstrings
+        i for i in truncated_one_site_quimb_hairy_bitstrings
     ]
 
     truncated_multi_site_mpo_train = [
-        i.squeeze()
+        i
         for i in mpo_encoding(
             mps_train, y_train, truncated_quimb_hairy_bitstrings
         )
     ]
 
     squeezed_multi_site_bitstrings = [
-        i.squeeze() for i in truncated_quimb_hairy_bitstrings
+        i for i in truncated_quimb_hairy_bitstrings
     ]
 
     digit = truncated_mpo_train[0]
     multi_site_digit = truncated_multi_site_mpo_train[0]
 
     # List of same images
-    mps_images = [mps_train[0].squeeze() for _ in range(10)]
+    mps_images = [mps_train[0] for _ in range(10)]
     train_label = [y_train[0] for _ in range(10)]
 
     # Green Loss
-    loss_one_site = green_loss(digit, mps_images, squeezed_bitstrings, train_label)
-    loss_multi_site = green_loss(multi_site_digit, mps_images, squeezed_multi_site_bitstrings, train_label)
+    loss_one_site = green_loss(digit.squeeze(), mps_images, squeezed_bitstrings, train_label)
+    loss_multi_site = green_loss(multi_site_digit.squeeze(), mps_images, squeezed_multi_site_bitstrings, train_label)
     assert np.round(loss_one_site, 3) == -1.0
     assert(loss_one_site == loss_multi_site)
 
     # Abs Green Loss
-    loss_one_site = abs_green_loss(digit, mps_images, squeezed_bitstrings, train_label)
-    loss_multi_site = abs_green_loss(multi_site_digit, mps_images, squeezed_multi_site_bitstrings, train_label)
+    loss_one_site = abs_green_loss(digit.squeeze(), mps_images, squeezed_bitstrings, train_label)
+    loss_multi_site = abs_green_loss(multi_site_digit.squeeze(), mps_images, squeezed_multi_site_bitstrings, train_label)
     assert np.round(loss_one_site, 3) == -1.0
     assert(loss_one_site == loss_multi_site)
 
     # MSE Loss
-    loss_one_site = mse_loss(digit, mps_images, squeezed_bitstrings, train_label)
-    loss_multi_site = mse_loss(multi_site_digit, mps_images, squeezed_multi_site_bitstrings, train_label)
+    loss_one_site = mse_loss(digit.squeeze(), mps_images, squeezed_bitstrings, train_label)
+    loss_multi_site = mse_loss(multi_site_digit.squeeze(), mps_images, squeezed_multi_site_bitstrings, train_label)
     assert np.round(loss_one_site, 3) == 0.0
     assert(loss_one_site == loss_multi_site)
 
     # Abs MSE Loss
-    loss_one_site = abs_mse_loss(digit, mps_images, squeezed_bitstrings, train_label)
-    loss_multi_site = mse_loss(multi_site_digit, mps_images, squeezed_multi_site_bitstrings, train_label)
+    loss_one_site = abs_mse_loss(digit.squeeze(), mps_images, squeezed_bitstrings, train_label)
+    loss_multi_site = mse_loss(multi_site_digit.squeeze(), mps_images, squeezed_multi_site_bitstrings, train_label)
     assert np.round(loss_one_site, 3) == 0.0
     assert(loss_one_site == loss_multi_site)
 
     # Cross Entropy Loss
-    loss_one_site = cross_entropy_loss(digit, mps_images, squeezed_bitstrings, train_label)
-    loss_multi_site = cross_entropy_loss(multi_site_digit, mps_images, squeezed_multi_site_bitstrings, train_label)
+    loss_one_site = cross_entropy_loss(digit.squeeze(), mps_images, squeezed_bitstrings, train_label)
+    loss_multi_site = cross_entropy_loss(multi_site_digit.squeeze(), mps_images, squeezed_multi_site_bitstrings, train_label)
     assert np.round(loss_one_site, 3) == 0.0
     assert(loss_one_site == loss_multi_site)
 
     # Stoudenmire Loss
-    loss_one_site = stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    loss_one_site = stoudenmire_loss(digit.squeeze(), mps_images, squeezed_bitstrings, train_label)
     old_loss = old_stoundenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
-    loss_multi_site = stoudenmire_loss(multi_site_digit, mps_images, squeezed_multi_site_bitstrings, train_label)
+    loss_multi_site = stoudenmire_loss(multi_site_digit.squeeze(), mps_images, squeezed_multi_site_bitstrings, train_label)
     assert np.round(loss_one_site, 3) == 0.0
     assert(old_loss == loss_one_site)
     assert(loss_one_site == loss_multi_site)
 
     # Abs stoudenmire Loss
-    loss_one_site = abs_stoudenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
+    loss_one_site = abs_stoudenmire_loss(digit.squeeze(), mps_images, squeezed_bitstrings, train_label)
     old_loss = old_abs_stoundenmire_loss(digit, mps_images, squeezed_bitstrings, train_label)
-    loss_multi_site = abs_stoudenmire_loss(multi_site_digit, mps_images, squeezed_multi_site_bitstrings, train_label)
+    loss_multi_site = abs_stoudenmire_loss(multi_site_digit.squeeze(), mps_images, squeezed_multi_site_bitstrings, train_label)
     assert np.round(loss_one_site, 3) == 0.0
     assert(old_loss == loss_one_site)
     assert(loss_one_site == loss_multi_site)
@@ -420,12 +420,12 @@ def test_loss_functions():
     #Untruncated
     #Just test untruncated for one. No need to do all.
     squeezed_untruncated_mpo_classifier = mpo_classifier.squeeze()
-    squeezed_untruncated_bitstrings = [i.squeeze() for i in quimb_hairy_bitstrings]
+    squeezed_untruncated_bitstrings = [i for i in quimb_hairy_bitstrings]
     #Truncated
     squeezed_truncated_mpo_classifier = truncated_mpo_classifier.squeeze()
-    squeezed_truncated_bitstrings = [i.squeeze() for i in truncated_quimb_hairy_bitstrings]
+    squeezed_truncated_bitstrings = [i for i in truncated_quimb_hairy_bitstrings]
 
-    squeezed_images = [i.squeeze() for i in mps_train][:10]
+    squeezed_images = [i for i in mps_train][:10]
 
     #Green Loss
     truncated_loss = green_loss(
@@ -433,8 +433,8 @@ def test_loss_functions():
     )
     truncated_overlap = -(
         (
-            squeezed_images[0].H
-            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]])
+            squeezed_images[0].squeeze().H
+            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]].squeeze())
         )
         ** 2
     )
@@ -446,8 +446,8 @@ def test_loss_functions():
     )
     overlap = (
         -abs(
-            squeezed_images[0].H
-            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]])
+            squeezed_images[0].squeeze().H
+            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]].squeeze())
         )
         ** 2
     )
@@ -459,8 +459,8 @@ def test_loss_functions():
     )
     overlap = (
         (
-            squeezed_images[0].H
-            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]])
+            squeezed_images[0].squeeze().H
+            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]].squeeze())
         )
         - 1
     ) ** 2
@@ -472,8 +472,8 @@ def test_loss_functions():
     )
     overlap = (
         abs(
-            squeezed_images[0].H
-            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]])
+            squeezed_images[0].squeeze().H
+            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]].squeeze())
         )
         - 1
     ) ** 2
@@ -486,8 +486,8 @@ def test_loss_functions():
     )
     overlap = anp.log(
         abs(
-            squeezed_images[0].H
-            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]])
+            squeezed_images[0].squeeze().H
+            @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]].squeeze())
         )
     )
     assert (int(np.log(abs(loss))) + 1) == (int(np.log(abs(overlap))) + 1)
@@ -503,8 +503,8 @@ def test_loss_functions():
         [
             (
                 anp.real(
-                    squeezed_images[0].H
-                    @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]])
+                    squeezed_images[0].squeeze().H
+                    @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]].squeeze())
                 )
                 - int(y_train[0] == label)
             )
@@ -526,8 +526,8 @@ def test_loss_functions():
         [
             (
                 abs(
-                    squeezed_images[0].H
-                    @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]])
+                    squeezed_images[0].squeeze().H
+                    @ (squeezed_truncated_mpo_classifier @ squeezed_truncated_bitstrings[y_train[0]].squeeze())
                 )
                 - int(y_train[0] == label)
             )
@@ -545,8 +545,8 @@ def test_loss_functions():
         [
             (
                 abs(
-                    squeezed_images[0].H
-                    @ (squeezed_untruncated_mpo_classifier @ squeezed_untruncated_bitstrings[y_train[0]])
+                    squeezed_images[0].squeeze().H
+                    @ (squeezed_untruncated_mpo_classifier @ squeezed_untruncated_bitstrings[y_train[0]].squeeze())
                 )
                 - int(y_train[0] == label)
             )
@@ -582,11 +582,11 @@ def test_classifier_predictions():
 
     #Check squeezed predicitions are the same.
     squeezed_mpo_classifier = mpo_classifier.squeeze()
-    squeezed_bitstrings = [i.squeeze() for i in quimb_hairy_bitstrings]
-    squeezed_images = [i.squeeze() for i in mps_train]
+    squeezed_bitstrings = [i for i in quimb_hairy_bitstrings]
+    squeezed_images = [i for i in mps_train]
 
     squeezed_predictions = np.array(
-        squeezed_classifier_predictions(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings)
+        classifier_predictions(squeezed_mpo_classifier, squeezed_images, squeezed_bitstrings)
     )
 
     assert(np.array([np.isclose(i,j) for i,j in zip(predictions, squeezed_predictions)]).all())
@@ -615,7 +615,7 @@ def test_evaluate_classifier_top_k_accuracy():
         mps_test = np.array(mps_train)[y_train == y_train[0]][:20]
         y_test = [y_train[0] for _ in range(len(mps_test))]
         prediction = np.array(
-            classifier_predictions(digit, mps_test, quimb_hairy_bitstrings)
+            classifier_predictions(digit.squeeze(), mps_test, quimb_hairy_bitstrings)
         )
 
         assert (
@@ -631,7 +631,7 @@ def test_evaluate_classifier_top_k_accuracy():
         mps_test = np.array(mps_train)[y_train == y_train[0]][:20]
         y_test = [y_train[0] for _ in range(len(mps_test))]
         prediction = np.array(
-            classifier_predictions(digit, mps_test, truncated_quimb_hairy_bitstrings)
+            classifier_predictions(digit.squeeze(), mps_test, truncated_quimb_hairy_bitstrings)
         )
 
         assert (

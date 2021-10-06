@@ -58,15 +58,15 @@ def initialise_experiment(
         if one_site:
             #Works for n_sites != 1. End result is a classifier with n_site = 1.
             classifier_data = fmpo_classifier.compress_one_site(D=D_total, orthogonalise=ortho_at_end)
-            mpo_classifier = data_to_QTN(classifier_data.data)
+            mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
         else:
             classifier_data = fmpo_classifier.compress(D=D_total, orthogonalise=ortho_at_end)
-            mpo_classifier = data_to_QTN(classifier_data.data)
+            mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
 
     else:
         # MPO encode data (already encoded as mps)
         # Has shape: # classes, mpo.shape
-        mpo_classifier = create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=420, full_sized = True)
+        mpo_classifier = create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=420, full_sized = True).squeeze()
 
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
 
@@ -82,7 +82,6 @@ def all_classes_experiment(
     predict_func,
     loss_func,
     title,
-    squeezed=False,
 ):
     print(title)
 
@@ -90,10 +89,6 @@ def all_classes_experiment(
     classifier_opt = pad_qtn_classifier(mpo_classifier)
     #classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
 
-    if squeezed:
-        q_hairy_bitstrings = [i.squeeze() for i in q_hairy_bitstrings]
-        classifier_opt = classifier_opt.squeeze()
-        mps_train = [i.squeeze() for i in mps_train]
 
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
@@ -243,7 +238,6 @@ def deterministic_mpo_classifier_experiment():
     )
     # MPS encode data
 
-    q_hairy_bitstrings = [i.squeeze() for i in q_hairy_bitstrings]
 
     one_site = False
     ortho_at_end = False
@@ -257,13 +251,12 @@ def deterministic_mpo_classifier_experiment():
         for D_total in tqdm(range(2, 52, 2)):
 
             mps_train = mps_encoding(train_data, D_total)
-            mps_train = [i.squeeze() for i in mps_train]
 
             fmpo_classifier = prepare_batched_classifier(train_data, train_labels, D_total, batch_num, one_site = one_site)
             classifier_data = fmpo_classifier.compress_one_site(D=D_total, orthogonalise=ortho_at_end)
             qtn_classifier = data_to_QTN(classifier_data.data).squeeze()
 
-            predictions = squeezed_classifier_predictions(qtn_classifier, mps_train, q_hairy_bitstrings)
+            predictions = classifier_predictions(qtn_classifier, mps_train, q_hairy_bitstrings)
             result = evaluate_classifier_top_k_accuracy(predictions, train_labels, 1)
 
             if arrangement == 'random':
@@ -502,9 +495,8 @@ if __name__ == "__main__":
         mps_images,
         bitstrings,
         labels,
-        squeezed_classifier_predictions,
+        classifier_predictions,
         abs_stoudenmire_loss,
         "padded_one_site_true_ortho_at_end_true_abs_stoudenmire_loss",
         #"full_sized_random_one_site_false",
-        squeezed=True,
     )
