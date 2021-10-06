@@ -33,7 +33,7 @@ n_train = 100
 n_test = 100
 D_total = 10
 
-x_train, y_train, x_test, y_test = load_data(n_train, n_test, equal_numbers = True)
+x_train, y_train, x_test, y_test = load_data(n_train, n_test, equal_numbers=True)
 
 possible_labels = list(set(y_train))
 n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
@@ -57,11 +57,15 @@ truncated_one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
 
 mps_train = mps_encoding(x_train, D_total)
 
-multiple_site_mpo_classifier = create_mpo_classifier(mps_train, truncated_quimb_hairy_bitstrings, seed=420)
-multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+multiple_site_mpo_classifier = create_mpo_classifier(
+    mps_train, truncated_quimb_hairy_bitstrings, seed=420
+)
+multiple_site_fMPO = fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
 
-one_site_mpo_classifier = create_mpo_classifier(mps_train, truncated_one_site_quimb_hairy_bitstrings, seed=420)
-one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
+one_site_mpo_classifier = create_mpo_classifier(
+    mps_train, truncated_one_site_quimb_hairy_bitstrings, seed=420
+)
+one_site_fMPO = fMPO([i.data for i in one_site_mpo_classifier.tensors])
 
 mpo_train = mpo_encoding(mps_train, y_train, truncated_quimb_hairy_bitstrings)
 fMPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in mpo_train]
@@ -69,40 +73,47 @@ fMPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in mpo_train]
 # TODO: Implement orthogonalisation test
 def test_compress():
 
-    #Check norm is still 1
-    #Multiple site
-    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    # Check norm is still 1
+    # Multiple site
+    multiple_site_fMPO = fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
     compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=5, orthogonalise=False)
     compressed_qtn_mpo = data_to_QTN(compressed_multiple_site_mpo.data)
     assert np.isclose(abs(compressed_qtn_mpo.H @ compressed_qtn_mpo), 1)
 
-    #Check overlap between initial classifier
-    #and compressed mpo with D=None is 1.
-    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
-    compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=None, orthogonalise=False)
+    # Check overlap between initial classifier
+    # and compressed mpo with D=None is 1.
+    multiple_site_fMPO = fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    compressed_multiple_site_mpo = multiple_site_fMPO.compress(
+        D=None, orthogonalise=False
+    )
     compressed_qtn_mpo = data_to_QTN(compressed_multiple_site_mpo.data).squeeze()
 
-    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    multiple_site_fMPO = fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
     qtn_mpo = data_to_QTN(multiple_site_fMPO.data).squeeze()
     assert np.isclose(abs(compressed_qtn_mpo.H @ qtn_mpo), 1)
 
-
     # Check canonicl form- compress procedure leaves mpo in mixed canonical form
     # center site is at left most hairest site.
-    compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=None, orthogonalise=False)
+    compressed_multiple_site_mpo = multiple_site_fMPO.compress(
+        D=None, orthogonalise=False
+    )
     for n, site in enumerate(compressed_multiple_site_mpo.data):
         d, s, i, j = site.shape
-        #reshape from (d, s, i, j) --> (i, s*i*d).
-        #As SVD on the return sweep was done like that.
-        #U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
+        # reshape from (d, s, i, j) --> (i, s*i*d).
+        # As SVD on the return sweep was done like that.
+        # U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
         U = site.transpose(2, 1, 3, 0).reshape(i, s * j * d)
         Uh = U.conj().T
         assert np.array_equal(np.round(U @ Uh, 5), np.eye(i))
 
     # Check compressed has right shape for range of different Ds
     for max_D in range(1, 5):
-        multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
-        compressed_multiple_site_mpo = multiple_site_fMPO.compress(D=max_D, orthogonalise=False)
+        multiple_site_fMPO = fMPO(
+            [i.data for i in multiple_site_mpo_classifier.tensors]
+        )
+        compressed_multiple_site_mpo = multiple_site_fMPO.compress(
+            D=max_D, orthogonalise=False
+        )
 
         for i, (site0, site1) in enumerate(
             zip(compressed_multiple_site_mpo, multiple_site_fMPO)
@@ -117,47 +128,56 @@ def test_compress():
             assert i0 <= max_D
             assert j0 <= max_D
 
+
 # TODO: Implement orthogonalisation test
 def test_compress_one_site():
 
-    #Check norm is still 1
-    #One site
-    one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
-    compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+    # Check norm is still 1
+    # One site
+    one_site_fMPO = fMPO([i.data for i in one_site_mpo_classifier.tensors])
+    compressed_one_site_mpo = one_site_fMPO.compress_one_site(
+        D=None, orthogonalise=False
+    )
     compressed_qtn_mpo = data_to_QTN(compressed_one_site_mpo.data)
-    assert np.isclose(abs(compressed_qtn_mpo.squeeze().H @ compressed_qtn_mpo.squeeze()), 1)
+    assert np.isclose(
+        abs(compressed_qtn_mpo.squeeze().H @ compressed_qtn_mpo.squeeze()), 1
+    )
 
     # Check overlap between initial classifier
     # and compressed mpo with D=None is 1.
-    one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
-    compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+    one_site_fMPO = fMPO([i.data for i in one_site_mpo_classifier.tensors])
+    compressed_one_site_mpo = one_site_fMPO.compress_one_site(
+        D=None, orthogonalise=False
+    )
     compressed_qtn_mpo = data_to_QTN(compressed_one_site_mpo.data)
 
-    one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
+    one_site_fMPO = fMPO([i.data for i in one_site_mpo_classifier.tensors])
     qtn_mpo = data_to_QTN(one_site_fMPO.data)
     assert np.isclose(abs(qtn_mpo.squeeze().H @ compressed_qtn_mpo.squeeze()), 1)
 
-    #Check each site is unitary. i.e. in canonical form:
-    #U @ U.H = I
-    compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+    # Check each site is unitary. i.e. in canonical form:
+    # U @ U.H = I
+    compressed_one_site_mpo = one_site_fMPO.compress_one_site(
+        D=None, orthogonalise=False
+    )
 
     for n, site in enumerate(compressed_one_site_mpo.data):
         d, s, i, j = site.shape
-        #reshape from (d, s, i, j) --> (i, s*i*d).
-        #As SVD on the return sweep was done like that.
-        #U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
+        # reshape from (d, s, i, j) --> (i, s*i*d).
+        # As SVD on the return sweep was done like that.
+        # U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
         U = site.transpose(2, 1, 3, 0).reshape(i, s * j * d)
         Uh = U.conj().T
         assert np.array_equal(np.round(U @ Uh, 5), np.eye(i))
 
-    #Check compressed has right shape for range of different Ds
+    # Check compressed has right shape for range of different Ds
     for max_D in range(1, 5):
-        one_site_fMPO =fMPO([i.data for i in one_site_mpo_classifier.tensors])
-        compressed_one_site_mpo = one_site_fMPO.compress_one_site(D=max_D, orthogonalise=False)
+        one_site_fMPO = fMPO([i.data for i in one_site_mpo_classifier.tensors])
+        compressed_one_site_mpo = one_site_fMPO.compress_one_site(
+            D=max_D, orthogonalise=False
+        )
 
-        for i, (site0, site1) in enumerate(
-            zip(compressed_one_site_mpo, one_site_fMPO)
-        ):
+        for i, (site0, site1) in enumerate(zip(compressed_one_site_mpo, one_site_fMPO)):
 
             d0, s0, i0, j0 = site0.shape
             d1, s1, i1, j1 = site1.shape
@@ -168,22 +188,32 @@ def test_compress_one_site():
             assert i0 <= max_D
             assert j0 <= max_D
 
-    #Check using compress_one_site on multisite mpo outputs one site mpo
-    multiple_site_fMPO =fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
-    compressed_multiple_site_mpo = multiple_site_fMPO.compress_one_site(D=None, orthogonalise=False)
+    # Check using compress_one_site on multisite mpo outputs one site mpo
+    multiple_site_fMPO = fMPO([i.data for i in multiple_site_mpo_classifier.tensors])
+    compressed_multiple_site_mpo = multiple_site_fMPO.compress_one_site(
+        D=None, orthogonalise=False
+    )
 
-    for k, (site1, site2) in enumerate(zip(compressed_multiple_site_mpo.data, compressed_one_site_mpo.data)):
+    for k, (site1, site2) in enumerate(
+        zip(compressed_multiple_site_mpo.data, compressed_one_site_mpo.data)
+    ):
         d1, s1, i1, j1 = site1.shape
         d2, s2, i2, j2 = site2.shape
 
-        assert(d1 == d2)
-        assert(s1 == s2)
+        assert d1 == d2
+        assert s1 == s2
 
-    #Check overlap is for multi site and converted one site.
+    # Check overlap is for multi site and converted one site.
     qtn_mpo = data_to_QTN(compressed_multiple_site_mpo.data)
-    overlap1 = mps_train[0].squeeze() @ (qtn_mpo.squeeze() @ truncated_one_site_quimb_hairy_bitstrings[0].squeeze())
-    overlap2 = mps_train[0].squeeze() @ (multiple_site_mpo_classifier.squeeze() @ truncated_quimb_hairy_bitstrings[0].squeeze())
-    assert( np.isclose(abs(overlap1), abs(overlap2)) )
+    overlap1 = mps_train[0].squeeze() @ (
+        qtn_mpo.squeeze() @ truncated_one_site_quimb_hairy_bitstrings[0].squeeze()
+    )
+    overlap2 = mps_train[0].squeeze() @ (
+        multiple_site_mpo_classifier.squeeze()
+        @ truncated_quimb_hairy_bitstrings[0].squeeze()
+    )
+    assert np.isclose(abs(overlap1), abs(overlap2))
+
 
 def test_add():
 
@@ -271,7 +301,5 @@ def test_add():
             )
 
 
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_compress_one_site()

@@ -330,7 +330,6 @@ class fMPO:
                         .transpose(0, 2, 1, 3)
                     )
 
-
         for m in range(len(self.data))[::-1]:
             A, S, V = split_back(self[m])
             U, S, self[m] = truncate_MPO(A, S, V, D)
@@ -343,35 +342,44 @@ class fMPO:
                 """
                 d_1, s_1, i_1, j_1 = self[m - 1].shape
                 d_2, s_2, i_2, j_2 = (U @ S).shape
-                #print('self[m-1]: ', self[m-1].shape)
-                #print('U@S: ', (U @ S).shape)
+                # print('self[m-1]: ', self[m-1].shape)
+                # print('U@S: ', (U @ S).shape)
                 self[m - 1] = (
                     ncon((self[m - 1], U @ S), [[-1, -2, -3, 4], [-5, -6, 4, -7]])
                     .transpose(0, 3, 1, 4, 2, 5)
                     .reshape(d_1 * d_2, s_1 * s_2, i_1, j_2)
                 )
-            #d, s, i, j = self[m].shape
-            #test = self[m].transpose(2, 1, 3, 0).reshape(i, s * j * d)
-            #testh = test.conj().T
-            #print(np.diag(test@testh))
+            # d, s, i, j = self[m].shape
+            # test = self[m].transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            # testh = test.conj().T
+            # print(np.diag(test@testh))
         return self
 
     def add(self, other):
-        """add: proper mpo addition here
-        """
-        new_data = [1j*zeros((self[i].shape[0], self[i].shape[1], self[i].shape[2]+other[i].shape[2], self[i].shape[3]+other[i].shape[3])) for i in range(self.L)]
+        """add: proper mpo addition here"""
+        new_data = [
+            1j
+            * zeros(
+                (
+                    self[i].shape[0],
+                    self[i].shape[1],
+                    self[i].shape[2] + other[i].shape[2],
+                    self[i].shape[3] + other[i].shape[3],
+                )
+            )
+            for i in range(self.L)
+        ]
         for i in range(self.L):
             if i == 0:
                 new_data[i] = concatenate([self[i], other[i]], 3)
-            elif i == self.L-1:
+            elif i == self.L - 1:
                 new_data[i] = concatenate([self[i], other[i]], 2)
             else:
-                new_data[i][:,:, :self[i].shape[2], :self[i].shape[3]] = self[i]
-                new_data[i][:,:, self[i].shape[2]:, self[i].shape[3]:] = other[i]
+                new_data[i][:, :, : self[i].shape[2], : self[i].shape[3]] = self[i]
+                new_data[i][:, :, self[i].shape[2] :, self[i].shape[3] :] = other[i]
 
         return fMPO(new_data)
 
-    
 
 if __name__ == "__main__":
     pass
