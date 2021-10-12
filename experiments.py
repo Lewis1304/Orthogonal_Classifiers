@@ -102,16 +102,6 @@ def all_classes_experiment(
     #classifier_opt = pad_qtn_classifier(mpo_classifier)
     # classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
 
-
-    single_predicitions = np.array([abs(mps_train[0].squeeze() @ (classifier_opt @ bitstring.squeeze()))for bitstring in q_hairy_bitstrings])
-    single_predicitions /= np.sum(single_predicitions)**1
-    print(single_predicitions)
-    print(np.sum(single_predicitions))
-
-
-    assert()
-
-
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
@@ -311,6 +301,15 @@ def deterministic_mpo_classifier_experiment():
             else:
                 raise Exception("Do not understand arrangement")
 
+def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
+    ensemble = prepare_ensemble(n_classifiers, mps_images, labels, D_total = D_total, batch_num = batch_num)
+
+    predictions = ensemble_predictions(ensemble, mps_images, bitstrings)
+    hard_result = evaluate_hard_ensemble_top_k_accuracy(predictions, labels, 1)
+    soft_result = evaluate_soft_ensemble_top_k_accuracy(predictions, labels, 1)
+
+    print('Hard result:', hard_result)
+    print('Soft result:', soft_result)
 
 """
 Results
@@ -534,21 +533,8 @@ if __name__ == "__main__":
 
     mps_images, labels = data
 
-    # plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
-    # classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
-
-
-
-    n_classifiers = 1
-    ensemble = prepare_ensemble(n_classifiers, mps_images, labels, D_total = D_total, batch_num = batch_num)
-
-    ensemble_predictions = ensemble_predictions(ensemble, mps_images, bitstrings)
-    hard_result = evaluate_hard_ensemble_top_k_accuracy(ensemble_predictions, labels, 1)
-    soft_result = evaluate_soft_ensemble_top_k_accuracy(ensemble_predictions, labels, 1)
-
-    print('Hard result:', hard_result)
-    print('Soft result:', soft_result)
-
+    #n_classifiers = 1
+    #ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num)
 
 
     """
