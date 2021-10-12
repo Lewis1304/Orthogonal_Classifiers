@@ -3,7 +3,7 @@ from functools import reduce
 from xmps.fMPS import fMPS
 from tqdm import tqdm
 from fMPO_reduced import fMPO
-from tools import load_data, data_to_QTN, arrange_data
+from tools import load_data, data_to_QTN, arrange_data, shuffle_arranged_data
 from variational_mpo_classifiers import (
     evaluate_classifier_top_k_accuracy,
     mps_encoding,
@@ -91,24 +91,22 @@ Prepare classifier
 
 
 def prepare_batched_classifier(
-    train_data, train_labels, D_total, batch_num, one_site=False
+    mps_train, labels, D_total, batch_num, one_site=False
 ):
 
-    possible_labels = list(set(train_labels))
+    possible_labels = list(set(labels))
     n_hairy_sites = int(np.ceil(mlog(len(possible_labels), 4)))
-    n_sites = int(np.ceil(mlog(train_data.shape[-1], 2)))
+    n_sites = mps_train[0].num_tensors
 
-    # Encoding images as MPOs. The structure of the MPOs might be different
-    # To the variational MPO structure. This requires creating bitstrings
-    # again as well
-    mps_train = mps_encoding(train_data, D_total)
+    #Bitstrings have to be non-truncated
+
     hairy_bitstrings_data = create_hairy_bitstrings_data(
         possible_labels, n_hairy_sites, n_sites, one_site
     )
     q_hairy_bitstrings = bitstring_data_to_QTN(
         hairy_bitstrings_data, n_hairy_sites, n_sites, truncated=True
     )
-    train_mpos = mpo_encoding(mps_train, train_labels, q_hairy_bitstrings)
+    train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
 
     # Converting qMPOs into fMPOs
     MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
@@ -118,6 +116,41 @@ def prepare_batched_classifier(
         MPOs = adding_batches(MPOs, D_total, batch_num)
 
     return MPOs[0]
+
+"""
+Ensemble classifiers
+"""
+
+
+def prepare_ensemble(*args, **kwargs):
+    """
+    param: args : Arguments for data
+    param: kwargs : Keyword arguments for hyperparameters
+    """
+    #assumes training data is loaded same way for evaluating.
+    # TODO: Change prepare_batched_classifier ot accept mps_images
+    n_classifiers = args[0]
+    mps_train = args[1]
+    labels = args[2]
+    D_total = kwargs['D_total']
+    batch_num = kwargs['batch_num']
+
+    classifiers = []
+    for i in tqdm(range(n_classifiers)):
+        mps_train, labels = shuffle_arranged_data(mps_train, labels)
+
+        fmpo_classifier = prepare_batched_classifier(
+            mps_train, labels, D_total, batch_num, one_site=False
+        )
+        classifier_data = fmpo_classifier.compress_one_site(
+            D=D_total, orthogonalise=False
+        )
+        qmpo_classifier = data_to_QTN(classifier_data.data).squeeze()
+
+        classifiers.append(qmpo_classifier)
+
+    return classifiers
+
 
 
 """
@@ -167,5 +200,6 @@ def batch_initialise_classifier():
 
 
 if __name__ == "__main__":
+    pass
     # sequential_mpo_classifier_experiment()
-    batch_initialise_classifier()
+    #batch_initialise_classifier()

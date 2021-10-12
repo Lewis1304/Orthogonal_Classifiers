@@ -94,6 +94,37 @@ def arrange_data(data, labels, **kwargs):
     else:
         raise Exception("Arrangement type not understood")
 
+def shuffle_arranged_data(data, labels):
+    #Assumes data is correctly arranged
+    #And equal amounts of data
+
+    num_class = len(labels) // len(list(set(labels)))
+    shuffled_data = []
+    shuffled_labels = []
+
+    for i in range(len(data) // num_class):
+
+        #Data of all the same class
+        sub_data = data[i*num_class:(i+1)*num_class]
+        sub_labels = labels[i*num_class:(i+1)*num_class]
+
+        shuff = np.arange(len(sub_labels))
+        np.random.shuffle(shuff)
+
+        sub_data = np.array(sub_data)[shuff]
+        sub_labels = np.array(sub_labels)[shuff]
+
+        shuffled_data.append(sub_data)
+        shuffled_labels.append(sub_labels)
+
+    shuffled_data = np.array([item for sublist in shuffled_data for item in sublist])
+    shuffled_labels = np.array([item for sublist in shuffled_labels for item in sublist])
+
+    return shuffled_data, shuffled_labels
+
+
+
+
 
 """
 Bitstring tools

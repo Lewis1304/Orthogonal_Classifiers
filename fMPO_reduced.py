@@ -334,6 +334,21 @@ class fMPO:
             A, S, V = split_back(self[m])
             U, S, self[m] = truncate_MPO(A, S, V, D)
 
+            """
+            d, s, i, j = U.shape
+            a = U.transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            print('U: ', a)
+
+            #d, s, i, j = S.shape
+            #S = S.transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            print('S: ', S)
+
+            d, s, i, j = self[m].shape
+            b = self[m].transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            print('self[m]: ', b)
+            """
+
+
             if m > 0:
                 """
                 ncon: Contract self[m-1] j leg with U@S i leg
@@ -349,10 +364,18 @@ class fMPO:
                     .transpose(0, 3, 1, 4, 2, 5)
                     .reshape(d_1 * d_2, s_1 * s_2, i_1, j_2)
                 )
-            # d, s, i, j = self[m].shape
-            # test = self[m].transpose(2, 1, 3, 0).reshape(i, s * j * d)
-            # testh = test.conj().T
-            # print(np.diag(test@testh))
+
+            """
+            d, s, i, j = self[m].shape
+            test = self[m].transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            testh = test.conj().T
+            print(np.diag(test@testh))
+            """
+            """
+            print(self[m].shape)
+            test = ncon((self[m], self[m].conj()), [[1,2,-3,4], [1,2,-5,4]])
+            print(test.shape)
+            """
         return self
 
     def add(self, other):

@@ -17,6 +17,8 @@ import autograd.numpy as anp
 import quimb.tensor as qtn
 from quimb.tensor.tensor_core import rand_uuid
 from quimb.tensor.optimize import TNOptimizer
+from tqdm import tqdm
+from collections import Counter
 
 from oset import oset
 from xmps.fMPS import fMPS
@@ -306,12 +308,46 @@ def classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings):
     return predictions
 
 
+def ensemble_predictions(ensemble, mps_test, q_hairy_bitstrings):
+    # assumes mps_test is aligned with appropiate labels, y_test
+    predictions = [[
+        [
+            abs(test_image.squeeze().H @ (classifier @ b.squeeze()))
+            for b in q_hairy_bitstrings
+        ]
+        for test_image in mps_test
+    ]
+    for classifier in tqdm(ensemble)]
+    normalised_predictions = [[j / np.sum(j) for j in i] for i in predictions]
+    return normalised_predictions
+
+
 def evaluate_classifier_top_k_accuracy(predictions, y_test, k):
-    top_k_predicitions = [
+    top_k_predictions = [
         np.argpartition(image_prediction, -k)[-k:] for image_prediction in predictions
     ]
-    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_predicitions)])
+    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_predictions)])
     return results
+
+
+def evaluate_soft_ensemble_top_k_accuracy(e_predictions, y_test, k):
+    top_k_ensemble_predictions = np.sum(e_predictions, axis = 0)
+    top_k_predictions = [
+        np.argpartition(image_prediction, -k)[-k:] for image_prediction in top_k_ensemble_predictions
+    ]
+    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_predictions)])
+    return results
+
+def evaluate_hard_ensemble_top_k_accuracy(e_predictions, y_test, k):
+    top_k_ensemble_predictions = np.array([[
+        np.argpartition(image_prediction, -k)[-k:] for image_prediction in top_k_predictions
+    ] for top_k_predictions in e_predictions]).transpose(1,0,2).reshape(len(y_test), -1)
+
+    top_k_ensemble_predictions = [[t[0] for t in Counter(i).most_common(k)] for i in top_k_ensemble_predictions]
+    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_ensemble_predictions)])
+    return results
+
+
 
 
 def evaluate_prediction_variance(predictions):

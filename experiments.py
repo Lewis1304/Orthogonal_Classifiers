@@ -1,5 +1,5 @@
 from variational_mpo_classifiers import *
-from deterministic_mpo_classifier import prepare_batched_classifier
+from deterministic_mpo_classifier import prepare_batched_classifier, prepare_ensemble
 import os
 from tqdm import tqdm
 
@@ -57,7 +57,7 @@ def initialise_experiment(
     if initialise_classifier:
         batch_num, one_site_adding, ortho_at_end = initialise_classifier_settings
         fmpo_classifier = prepare_batched_classifier(
-            x_train, y_train, D_total, batch_num, one_site=one_site_adding
+            mps_train, y_train, D_total, batch_num, one_site=one_site_adding
         )
 
         if one_site:
@@ -98,9 +98,19 @@ def all_classes_experiment(
 ):
     print(title)
 
-    # classifier_opt = mpo_classifier
-    classifier_opt = pad_qtn_classifier(mpo_classifier)
+    classifier_opt = mpo_classifier
+    #classifier_opt = pad_qtn_classifier(mpo_classifier)
     # classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
+
+
+    single_predicitions = np.array([abs(mps_train[0].squeeze() @ (classifier_opt @ bitstring.squeeze()))for bitstring in q_hairy_bitstrings])
+    single_predicitions /= np.sum(single_predicitions)**1
+    print(single_predicitions)
+    print(np.sum(single_predicitions))
+
+
+    assert()
+
 
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
@@ -336,7 +346,7 @@ def plot_results(results, title):
     plt.close(fig)
 
 
-def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
+def plot_acc_before_ortho_and_after():
 
     different_classifiers = [
         # "one_site_false_ortho_at_end_false_weird_loss",
@@ -345,14 +355,17 @@ def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
         "one_site_true_ortho_at_end_true_weird_loss",
         "random_one_site_false_ortho_at_end_false_weird_loss",
     ]
-    different_names = ["2 sites\northo", "1 site\nnon_ortho", "1 site\northo", "random"]
+    #different_names = ["2 sites\northo", "1 site\nnon_ortho", "1 site\northo", "random"]
     # different_names = ["2 sites\nnon_ortho", "2 sites\northo", "1 site\nnon_ortho", "1 site\northo", "random"]
-
+    different_names = ['Rand. init.\n- Not trained', 'Rand. init.\n- Trained', 'Batched init.\n- Not trained', 'Batched init.\n- Trained']
     # results_og = [0.826, 0.821, 0.827, 0.821, 0.786]
     # results_ortho = [0.802, 0.805, 0.805, 0.808, 0.795]
-    results_og = [0.864, 0.828, 0.869, 0.141]
-    results_ortho = [0.864, 0.804, 0.855, 0.124]
 
+    #results_og = [0.864, 0.828, 0.869, 0.141]
+    #results_ortho = [0.864, 0.804, 0.855, 0.124]
+
+    results_og = [0.1, 0.827, 0.816, 0.869]
+    results_ortho = [0.1, 0.805, 0.803, 0.855]
     # for c in different_classifiers:
     #    og, orth = svd_classifier(c, mps_images, labels)
     #    results_og.append(og)
@@ -383,7 +396,7 @@ def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
         zorder=3,
     )
 
-    legend_1 = ax1.legend(loc="upper right")
+    legend_1 = ax1.legend(loc="upper left")
 
     # ax1.tick_params(axis="y", labelcolor='C0')
     # ax1.set_xlim([1.75,10.25])
@@ -396,40 +409,40 @@ def plot_acc_before_ortho_and_after(mps_images, bitstrings, labels):
 
     ax1.set_xticklabels(different_names)
     # plt.savefig("different_initialisations_test.pdf")
-    ax1.set_yscale("log")
+    #ax1.set_yscale("log")
     ax1.set_yticks(np.arange(0.1, 1.1, 0.1))
     # ax1.ticklabel_format(useOffset=False)
     # ax1.yaxis.set_major_formatter(StrMethodFormatter('{x:.0f}'))
     # ax1.yaxis.set_minor_formatter(NullFormatter())
 
-    plt.savefig("new_cost_function.pdf", bbox_inches="tight")
+    #plt.savefig("new_cost_function.pdf", bbox_inches="tight")
+    plt.savefig('pp_fig.pdf')
     plt.show()
 
 
 def plot_deterministic_mpo_classifier_results():
     random_arrangement = np.load(
-        "results/different_arrangements/random_arrangement.npy"
+        "results/one_site_vs_many_and_ortho_vs_non_ortho/one_site_false_ortho_at_end_false.npy"
     )
     one_class_arrangement = np.load(
-        "results/different_arrangements/one_class_arrangement.npy"
-    )
-    one_of_each_arrangement = np.load(
-        "results/different_arrangements/one_of_each_arrangement.npy"
+        "results/one_site_vs_many_and_ortho_vs_non_ortho/one_site_false_ortho_at_end_true.npy"
     )
 
     x = list(range(2, 52, 2))
 
-    plt.plot(x, random_arrangement, label="randomly batched")
-    plt.plot(x, one_class_arrangement, label="same class batched")
-    plt.plot(x, one_of_each_arrangement, label="one of each class batched")
+    plt.plot(x, random_arrangement, label="Non-orthogonal")
+    plt.plot(x, one_class_arrangement, label="Orthogonal")
+    #plt.plot(x, one_of_each_arrangement, label="one of each class batched")
 
-    plt.xlim([2, 50])
+    plt.xlim([2, 40])
 
-    plt.xlabel("$D_{total}$")
+    #plt.xlabel("$D_{total}$")
+    plt.xlabel("Classifier bond dimension")
     plt.ylabel("Top-1 training accuracy")
     plt.legend()
-    plt.title("n_samples = 1000, Multiple label site, Non-orthogonal, batch_num = 10")
-    plt.savefig("results/different_arrangements/train_acc_vs_D_total.pdf")
+    #plt.title("n_samples = 1000, Multiple label site, Non-orthogonal, batch_num = 10")
+    #plt.savefig("results/different_arrangements/train_acc_vs_D_total.pdf")
+    plt.savefig('pp_fig1.pdf')
     plt.show()
 
 
@@ -502,12 +515,12 @@ def plot_padding_results():
 
 
 if __name__ == "__main__":
-    plot_deterministic_initialisation_different_cost_function_results()
-    assert ()
+
     num_samples = 1000
     D_total = 32
-    one_site = False
-    ortho_at_end = True
+    one_site = True
+    ortho_at_end = False
+    batch_num = 10
 
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
@@ -516,7 +529,7 @@ if __name__ == "__main__":
         truncated=True,
         one_site=one_site,
         initialise_classifier=True,
-        initialise_classifier_settings=(10, False, ortho_at_end),
+        initialise_classifier_settings=(batch_num, False, ortho_at_end),
     )
 
     mps_images, labels = data
@@ -524,6 +537,21 @@ if __name__ == "__main__":
     # plot_acc_before_ortho_and_after(mps_images, bitstrings, labels)
     # classifier = load_qtn_classifier('one_site_stoudenmire_truncated_seed_420_more_epochs')
 
+
+
+    n_classifiers = 1
+    ensemble = prepare_ensemble(n_classifiers, mps_images, labels, D_total = D_total, batch_num = batch_num)
+
+    ensemble_predictions = ensemble_predictions(ensemble, mps_images, bitstrings)
+    hard_result = evaluate_hard_ensemble_top_k_accuracy(ensemble_predictions, labels, 1)
+    soft_result = evaluate_soft_ensemble_top_k_accuracy(ensemble_predictions, labels, 1)
+
+    print('Hard result:', hard_result)
+    print('Soft result:', soft_result)
+
+
+
+    """
     all_classes_experiment(
         classifier,
         mps_images,
@@ -531,6 +559,7 @@ if __name__ == "__main__":
         labels,
         classifier_predictions,
         abs_stoudenmire_loss,
-        "padded_one_site_true_ortho_at_end_true_abs_stoudenmire_loss",
+        "TEST",
         # "full_sized_random_one_site_false",
     )
+    """
