@@ -301,6 +301,7 @@ def deterministic_mpo_classifier_experiment():
             else:
                 raise Exception("Do not understand arrangement")
 
+
 def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
     ensemble = prepare_ensemble(n_classifiers, mps_images, labels, D_total = D_total, batch_num = batch_num)
 
@@ -310,6 +311,10 @@ def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
 
     print('Hard result:', hard_result)
     print('Soft result:', soft_result)
+
+
+
+
 
 """
 Results
@@ -532,7 +537,7 @@ if __name__ == "__main__":
     )
 
     mps_images, labels = data
-
+    train_predictions(mps_images, labels, classifier, bitstrings)
     #n_classifiers = 1
     #ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num)
 

@@ -348,12 +348,34 @@ def evaluate_hard_ensemble_top_k_accuracy(e_predictions, y_test, k):
     return results
 
 
+def train_predictions(mps_images, labels, classifier, bitstrings):
+    import tensorflow as tf
 
+    predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
 
-def evaluate_prediction_variance(predictions):
-    prediction_variance = [np.var(image_prediction) for image_prediction in predictions]
-    return np.mean(prediction_variance)
+    #predictions = np.random.normal(0, 1, (1000,10))
 
+    inputs = tf.keras.Input(shape=(10,))
+    outputs = tf.keras.layers.Dense(10, activation = 'relu')(inputs)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    model.summary()
+
+    model.compile(
+    optimizer=tf.keras.optimizers.Adam(0.001),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
+    metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+    )
+
+    history = model.fit(
+        predictions,
+        labels,
+        epochs=1000,
+        batch_size = 1
+    )
+    accuracy = history.history['sparse_categorical_accuracy']
+
+    plt.plot(accuracy)
+    plt.show()
 
 if __name__ == "__main__":
     pass
