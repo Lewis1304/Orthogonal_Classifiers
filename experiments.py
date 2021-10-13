@@ -10,7 +10,7 @@ Prepare Experiment
 
 def initialise_experiment(
     n_samples,
-    D_total,
+    D,
     arrangement="one class",
     truncated=False,
     one_site=False,
@@ -30,6 +30,8 @@ def initialise_experiment(
                                             ortho_at_end: Whether polar decomp is performed at the end or not
                                             )
     """
+    D_encode, D_batch, D_final = D
+
     # Load & Organise Data
     x_train, y_train, x_test, y_test = load_data(
         n_samples, shuffle=False, equal_numbers=True
@@ -51,24 +53,24 @@ def initialise_experiment(
         hairy_bitstrings_data, n_hairysites, n_sites, truncated=truncated
     )
     # MPS encode data
-    mps_train = mps_encoding(x_train, D_total)
+    mps_train = mps_encoding(x_train, D_encode)
 
     # Initial Classifier
     if initialise_classifier:
         batch_num, one_site_adding, ortho_at_end = initialise_classifier_settings
         fmpo_classifier = prepare_batched_classifier(
-            mps_train, y_train, D_total, batch_num, one_site=one_site_adding
+            mps_train, y_train, D_batch, batch_num, one_site=one_site_adding
         )
 
         if one_site:
             # Works for n_sites != 1. End result is a classifier with n_site = 1.
             classifier_data = fmpo_classifier.compress_one_site(
-                D=D_total, orthogonalise=ortho_at_end
+                D=D_final, orthogonalise=ortho_at_end
             )
             mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
         else:
             classifier_data = fmpo_classifier.compress(
-                D=D_total, orthogonalise=ortho_at_end
+                D=D_final, orthogonalise=ortho_at_end
             )
             mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
 
@@ -108,6 +110,9 @@ def all_classes_experiment(
     accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 1)]
     # variances = [evaluate_prediction_variance(initial_predictions)]
     losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
+
+    print(accuracies)
+    assert()
 
     def optimiser(classifier):
         optmzr = TNOptimizer(
@@ -223,16 +228,23 @@ def svd_classifier(dir, mps_images, labels):
     return og_acc, ortho_acc
 
 
-def deterministic_mpo_classifier_experiment():
+def deterministic_mpo_classifier_experiment(
+    n_samples,
+    batch_num
+):
+    D_encode, D_batch, D_final = (32, None, None)
 
-    n_train = 1000
-    batch_num = 10
-
-    # Load Data- ensuring particular order to be batched added
+    """
+    # Load & Organise Data
+    """
     x_train, y_train, x_test, y_test = load_data(
-        n_train, shuffle=False, equal_numbers=True
+        n_samples, shuffle=False, equal_numbers=True
     )
+    x_train, y_train = arrange_data(x_train, y_train, arrangement="one class")
 
+    """
+    # Create Bitstrings
+    """
     # All possible class labels
     possible_labels = list(set(y_train))
     # Number of "label" sites
@@ -242,64 +254,49 @@ def deterministic_mpo_classifier_experiment():
 
     # Create hairy bitstrings
     hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairysites, n_sites, one_site=True
+        possible_labels, n_hairysites, n_sites, True
     )
     q_hairy_bitstrings = bitstring_data_to_QTN(
         hairy_bitstrings_data, n_hairysites, n_sites, truncated=True
     )
+
+    """
     # MPS encode data
+    """
+    mps_train = mps_encoding(x_train, D_encode)
 
-    one_site = False
-    ortho_at_end = False
+    """
+    # Initialise Classifier
+    """
+    accuracies = []
+    from fMPO_reduced import fMPO
 
-    random_arrangement = []
-    one_of_each_arrangement = []
-    one_class_arrangement = []
+    for D_batch in tqdm(range(10, 1010, 10)):
 
-    for arrangement in tqdm(["random", "one of each", "one class"]):
-        train_data, train_labels = arrange_data(
-            x_train, y_train, arrangement=arrangement
+        fmpo_classifier = prepare_batched_classifier(
+            mps_train, y_train, D_batch, batch_num, one_site=False
         )
-        for D_total in tqdm(range(2, 52, 2)):
 
-            mps_train = mps_encoding(train_data, D_total)
+        data = fMPO(fmpo_classifier.data)
+        classifier_data = data.compress_one_site(
+            D=D_batch, orthogonalise=False
+        )
+        mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
 
-            fmpo_classifier = prepare_batched_classifier(
-                train_data, train_labels, D_total, batch_num, one_site=one_site
-            )
-            classifier_data = fmpo_classifier.compress_one_site(
-                D=D_total, orthogonalise=ortho_at_end
-            )
-            qtn_classifier = data_to_QTN(classifier_data.data).squeeze()
+        """
+        # Evaluate Classifier
+        """
+        predictions = classifier_predictions(mpo_classifier, mps_train, q_hairy_bitstrings)
+        accuracy = evaluate_classifier_top_k_accuracy(predictions, y_train, 1)
+        accuracies.append(accuracy)
 
-            predictions = classifier_predictions(
-                qtn_classifier, mps_train, q_hairy_bitstrings
-            )
-            result = evaluate_classifier_top_k_accuracy(predictions, train_labels, 1)
-
-            if arrangement == "random":
-                random_arrangement.append(result)
-                np.save(
-                    "results/different_arrangements/random_arrangement",
-                    random_arrangement,
-                )
-
-            elif arrangement == "one of each":
-                one_of_each_arrangement.append(result)
-                np.save(
-                    "results/different_arrangements/one_of_each_arrangement",
-                    one_of_each_arrangement,
-                )
-
-            elif arrangement == "one class":
-                one_class_arrangement.append(result)
-                np.save(
-                    "results/different_arrangements/one_class_arrangement",
-                    one_class_arrangement,
-                )
-
-            else:
-                raise Exception("Do not understand arrangement")
+        np.save('accuracies', accuracies)
+        x = list(range(10, 1010, 10))[:len(accuracies)]
+        plt.plot(x, accuracies)
+        plt.xlabel('$D_{batch} \ D_{final}$')
+        plt.ylabel('Top-1 Training Accuracy')
+        plt.savefig('figures/D_batch_training_acc.pdf')
+        plt.close()
 
 
 def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
@@ -311,7 +308,6 @@ def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
 
     print('Hard result:', hard_result)
     print('Soft result:', soft_result)
-
 
 
 
@@ -521,14 +517,25 @@ def plot_padding_results():
 if __name__ == "__main__":
 
     num_samples = 1000
-    D_total = 32
-    one_site = True
-    ortho_at_end = False
+    #one_site = True
+    #ortho_at_end = False
     batch_num = 10
 
+    #D_total = 32
+    #D_encode = D_total
+    #D_batch = D_total
+    #D_final = D_total
+    #D = (D_encode, D_batch, D_final)
+    deterministic_mpo_classifier_experiment(num_samples, batch_num)
+
+
+
+
+
+    assert()
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
-        D_total,
+        D,
         arrangement="one class",
         truncated=True,
         one_site=one_site,
@@ -537,12 +544,10 @@ if __name__ == "__main__":
     )
 
     mps_images, labels = data
-    train_predictions(mps_images, labels, classifier, bitstrings)
     #n_classifiers = 1
     #ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num)
 
 
-    """
     all_classes_experiment(
         classifier,
         mps_images,
@@ -553,4 +558,3 @@ if __name__ == "__main__":
         "TEST",
         # "full_sized_random_one_site_false",
     )
-    """
