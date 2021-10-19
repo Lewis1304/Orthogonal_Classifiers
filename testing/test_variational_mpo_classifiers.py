@@ -17,10 +17,10 @@ import sys
 sys.path.append("../")
 from tools import *
 from variational_mpo_classifiers import *
-from deterministic_mpo_classifier import mpo_encoding
+from deterministic_mpo_classifier import mpo_encoding, prepare_batched_classifier, unitary_qtn
 
 from xmps.ncon import ncon as nc
-
+from functools import reduce
 
 def ncon(*args, **kwargs):
     return nc(
@@ -107,6 +107,34 @@ def test_create_hairy_bitstrings_data():
     for label in possible_labels:
         for site in one_site_bitstrings_data_untruncated_data[label][: (n_sites - 1)]:
             assert np.array_equal(site, np.eye(16)[0])
+
+
+def test_create_padded_bitstrings_data():
+    mps_train = mps_encoding(x_train, 32)
+
+    fmpo_classifier = prepare_batched_classifier(
+            mps_train, y_train, 32, 10, one_site=False
+        ).compress_one_site(D = None, orthogonalise = True)
+    qtn_classifier = data_to_QTN(fmpo_classifier.data)
+
+    uclassifier = unitary_qtn(qtn_classifier)
+
+    bitstrings_data = create_padded_bitstrings_data(possible_labels, uclassifier)
+
+    #test correct shape: #padding combinations, #classes, #sites, max_s
+    ss = [site.shape[1] for site in uclassifier.tensors]
+    max_s = max(ss)
+    number_of_paddings = reduce(lambda x, y: x*y, ss[:-1])
+    assert(bitstrings_data.shape == (number_of_paddings, len(possible_labels), uclassifier.num_tensors, max_s))
+
+    bitstrings_others = [bin(k)[2:].zfill(len(uclassifier.tensors[:-1])) for k in range(number_of_paddings)]
+    #test paddings are encoded correctly
+    for padding1, padding2 in zip(bitstrings_data, bitstrings_others):
+        for label in padding1:
+            for site1, site2, site3 in zip(label, uclassifier.tensors[:-1], padding2):
+                if site2.shape[1] > 1:
+                    basis = ((1 - int(site3)) * ([1,0] + [0] * (max_s - 2))) + (int(site3) * ([0,1] + [0] * (max_s - 2)))
+                    assert(np.array_equal(site1, basis))
 
 
 def test_bitstring_to_product_state_data():
@@ -765,6 +793,31 @@ def test_classifier_predictions():
     ).all()
 
 
+def test_padded_classifier_predictions():
+    mps_train = mps_encoding(x_train, 32)
+
+    fmpo_classifier = prepare_batched_classifier(
+            mps_train, y_train, 32, 10, one_site=False
+        ).compress_one_site(D = None, orthogonalise = True)
+    qtn_classifier = data_to_QTN(fmpo_classifier.data)
+
+    uclassifier = unitary_qtn(qtn_classifier)
+
+    bitstrings_data = create_padded_bitstrings_data(possible_labels, uclassifier)
+    padded_bitstrings = padded_bitstring_data_to_QTN(
+        bitstrings_data, uclassifier)
+
+    #Check predictions are the same for same padding combination.
+    predictions = classifier_predictions(qtn_classifier.squeeze(), mps_train, truncated_one_site_quimb_hairy_bitstrings)
+    upredictions = padded_classifier_predictions(uclassifier.squeeze(), mps_train, padded_bitstrings[:1])
+    assert(np.isclose(predictions, upredictions).all())
+
+    #Check padded predictions are same shape as normal predicitions for more than one padding
+    upredictions = padded_classifier_predictions(uclassifier.squeeze(), mps_train, padded_bitstrings[:2])
+    assert(np.array(upredictions).shape == np.array(predictions).shape)
+
+
+
 def test_evaluate_classifier_top_k_accuracy():
 
     # Test whether an initial classifier displays correct results
@@ -818,5 +871,5 @@ def test_evaluate_classifier_top_k_accuracy():
 
 
 if __name__ == "__main__":
-    test_evaluate_classifier_top_k_accuracy()
+    test_padded_classifier_predictions()
     # test_create_mpo_classifier_from_initialised_classifier()

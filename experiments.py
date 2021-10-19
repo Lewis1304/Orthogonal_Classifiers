@@ -1,5 +1,5 @@
 from variational_mpo_classifiers import *
-from deterministic_mpo_classifier import prepare_batched_classifier, prepare_ensemble
+from deterministic_mpo_classifier import prepare_batched_classifier, prepare_ensemble, unitary_qtn
 import os
 from tqdm import tqdm
 
@@ -67,12 +67,12 @@ def initialise_experiment(
             classifier_data = fmpo_classifier.compress_one_site(
                 D=D_final, orthogonalise=ortho_at_end
             )
-            mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
+            mpo_classifier = data_to_QTN(classifier_data.data)#.squeeze()
         else:
             classifier_data = fmpo_classifier.compress(
                 D=D_final, orthogonalise=ortho_at_end
             )
-            mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
+            mpo_classifier = data_to_QTN(classifier_data.data)#.squeeze()
 
     else:
         # MPO encode data (already encoded as mps)
@@ -228,11 +228,8 @@ def svd_classifier(dir, mps_images, labels):
     return og_acc, ortho_acc
 
 
-def deterministic_mpo_classifier_experiment(
-    n_samples,
-    batch_num
-):
-    D_encode, D_batch, D_final = (32, None, None)
+def deterministic_mpo_classifier_experiment(n_samples,batch_num):
+    D_encode, D_batch, D_final = (32, None, 50)
 
     """
     # Load & Organise Data
@@ -271,7 +268,7 @@ def deterministic_mpo_classifier_experiment(
     accuracies = []
     from fMPO_reduced import fMPO
 
-    for D_batch in tqdm(range(10, 1010, 10)):
+    for D_batch in tqdm(range(10, 110, 10)):
 
         fmpo_classifier = prepare_batched_classifier(
             mps_train, y_train, D_batch, batch_num, one_site=False
@@ -279,7 +276,7 @@ def deterministic_mpo_classifier_experiment(
 
         data = fMPO(fmpo_classifier.data)
         classifier_data = data.compress_one_site(
-            D=D_batch, orthogonalise=False
+            D=D_final, orthogonalise=False
         )
         mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
 
@@ -290,13 +287,7 @@ def deterministic_mpo_classifier_experiment(
         accuracy = evaluate_classifier_top_k_accuracy(predictions, y_train, 1)
         accuracies.append(accuracy)
 
-        np.save('accuracies', accuracies)
-        x = list(range(10, 1010, 10))[:len(accuracies)]
-        plt.plot(x, accuracies)
-        plt.xlabel('$D_{batch} \ D_{final}$')
-        plt.ylabel('Top-1 Training Accuracy')
-        plt.savefig('figures/D_batch_training_acc.pdf')
-        plt.close()
+        np.save(f'accuracies_D_final_{D_final}', accuracies)
 
 
 def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
@@ -513,26 +504,40 @@ def plot_padding_results():
 
     assert ()
 
+def tracing_over(classifier, bitstrings, mps_images, labels):
+
+    """
+    Unitaryfying the TN
+    """
+    uclassifier = unitary_qtn(classifier)
+    bitstrings_data = create_padded_bitstrings_data(list(set(labels)), uclassifier)
+
+    padded_bitstrings = padded_bitstring_data_to_QTN(
+        bitstrings_data, uclassifier)
+
+    print(uclassifier)
+    print(padded_bitstrings[0][0])
+    predictions = padded_classifier_predictions(uclassifier.squeeze(), mps_images, padded_bitstrings[:1])
+    print(evaluate_classifier_top_k_accuracy(predictions, labels, 1))
+    assert()
 
 if __name__ == "__main__":
 
     num_samples = 1000
-    #one_site = True
-    #ortho_at_end = False
     batch_num = 10
 
-    #D_total = 32
-    #D_encode = D_total
-    #D_batch = D_total
-    #D_final = D_total
-    #D = (D_encode, D_batch, D_final)
-    deterministic_mpo_classifier_experiment(num_samples, batch_num)
+    one_site = True
+    one_site_adding = False
+    ortho_at_end = True
 
+    D_total = 32
+    D_encode = D_total
+    D_batch = D_total
+    D_final = D_total
+    D = (D_encode, D_batch, D_final)
+    #deterministic_mpo_classifier_experiment(1000, 10)
+    #assert()
 
-
-
-
-    assert()
     data, classifier, bitstrings = initialise_experiment(
         num_samples,
         D,
@@ -540,13 +545,32 @@ if __name__ == "__main__":
         truncated=True,
         one_site=one_site,
         initialise_classifier=True,
-        initialise_classifier_settings=(batch_num, False, ortho_at_end),
+        initialise_classifier_settings=(batch_num, one_site_adding, ortho_at_end),
     )
 
     mps_images, labels = data
-    #n_classifiers = 1
-    #ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num)
 
+    #x_train, y_train, x_test, y_test = load_data(
+    #    1000, shuffle=False, equal_numbers=True
+    #)
+    #train_predictions(x_train, y_train, classifier, bitstrings)
+    tracing_over(classifier, bitstrings, mps_images, labels)
+
+    #test = ncon((site, site.conj()), [[1,2,-3,4], [1,2,-5,4]])
+    #print(np.diag(test))
+    #test = ncon((site.conj(), site), [[1,2,-3,4], [1,2,-5,4]])
+    #print(np.diag(test))
+
+    #Convert into unitaries.
+    #Check result is still the same?
+    #Create padded bitstrings- use earlier commits
+    #Create evaluation function- use earlier commits
+
+
+    #predictions = classifier_predictions(classifier.squeeze(), mps_images, bitstrings)
+    #accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
+    #print(accuracy)
+    #assert()
 
     all_classes_experiment(
         classifier,

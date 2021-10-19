@@ -158,7 +158,7 @@ def test_compress_one_site():
     # Check each site is unitary. i.e. in canonical form:
     # U @ U.H = I
     compressed_one_site_mpo = one_site_fMPO.compress_one_site(
-        D=None, orthogonalise=False
+        D=None, orthogonalise=False, sweep_back = True
     )
 
     for n, site in enumerate(compressed_one_site_mpo.data):

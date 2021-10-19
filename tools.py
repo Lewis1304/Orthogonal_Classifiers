@@ -11,6 +11,7 @@ import quimb.tensor as qtn
 from quimb.tensor.tensor_core import rand_uuid
 
 from oset import oset
+from scipy.linalg import null_space
 
 from xmps.fMPS import fMPS
 from fMPO_reduced import fMPO
@@ -172,6 +173,35 @@ def bitstring_data_to_QTN(data, n_hairysites, n_sites, truncated=False):
         q_product_states.append(qtn.TensorNetwork(qtn_data))
     return q_product_states
 
+
+def padded_bitstring_data_to_QTN(data, uclassifier):
+    prod_state_data = [bitstring_to_product_state_data(i) for i in data]
+
+    prod_state_data = [[
+        [
+            site1[:site2.shape[1]]
+            for site1, site2 in zip(l, uclassifier.tensors)
+        ]
+        for l in padding
+    ]
+    for padding in prod_state_data]
+
+    q_product_states = []
+    for padding in prod_state_data:
+        paddings = []
+        for prod_state in padding:
+            qtn_data = []
+            previous_ind = rand_uuid()
+            for j, site in enumerate(prod_state):
+                next_ind = rand_uuid()
+                tensor = qtn.Tensor(
+                    site, inds=(f"s{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+                )
+                previous_ind = next_ind
+                qtn_data.append(tensor)
+            paddings.append(qtn.TensorNetwork(qtn_data))
+        q_product_states.append(paddings)
+    return q_product_states
 
 """
 MPS encoding tools
