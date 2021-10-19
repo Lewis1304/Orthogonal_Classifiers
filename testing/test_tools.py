@@ -17,7 +17,7 @@ import sys
 sys.path.append("../")
 from tools import *
 from variational_mpo_classifiers import *
-from deterministic_mpo_classifier import mpo_encoding, class_encode_mps_to_mpo
+from deterministic_mpo_classifier import mpo_encoding, class_encode_mps_to_mpo, prepare_batched_classifier, unitary_qtn
 
 from xmps.ncon import ncon as nc
 
@@ -66,6 +66,7 @@ mps_train = mps_encoding(x_train, D_total)
 mpo_train = mpo_encoding(mps_train, y_train, quimb_hairy_bitstrings)
 
 mpo_classifier = create_mpo_classifier(mps_train, quimb_hairy_bitstrings, seed=420)
+one_site_mpo_classifier = create_mpo_classifier(mps_train, truncated_one_site_quimb_hairy_bitstrings, seed=420)
 
 predictions = np.array(
     classifier_predictions(mpo_classifier.squeeze(), mps_train, quimb_hairy_bitstrings)
@@ -241,6 +242,28 @@ def test_bitstring_data_to_QTN():
         for i, site in enumerate(truncated_one_site_quimb_hairy_bitstrings[label]):
             if i < (n_sites - 1):
                 assert site.data == np.array([1])
+
+def test_padded_bitstring_data_to_QTN():
+    mps_train = mps_encoding(x_train, 32)
+
+    fmpo_classifier = prepare_batched_classifier(
+            mps_train, y_train, 32, 10, one_site=False
+        ).compress_one_site(D = None, orthogonalise = True)
+    qtn_classifier = data_to_QTN(fmpo_classifier.data)
+
+    uclassifier = unitary_qtn(qtn_classifier)
+
+    bitstrings_data = create_padded_bitstrings_data(possible_labels, uclassifier)
+    padded_bitstrings = padded_bitstring_data_to_QTN(
+        bitstrings_data, uclassifier)
+
+    #Check data isn't altered (truncated by default)
+    for padding1, padding2 in zip(padded_bitstrings, bitstrings_data):
+        for label1, label2 in zip(padding1, padding2):
+            tensors = [site.data for site in label1.tensors]
+            for site1,site2 in zip(tensors, label2):
+                for element1, element2 in zip(site1,site2):
+                    assert(element1 == element2)
 
 
 def test_image_to_mps():
@@ -454,7 +477,10 @@ def test_pad_qtn_classifier():
         )
 
 
+
+
+
 if __name__ == "__main__":
     # test_bitstring_data_to_QTN()
     # test_save_and_load_qtn_classifier()
-    test_pad_qtn_classifier()
+    test_padded_bitstring_data_to_QTN()

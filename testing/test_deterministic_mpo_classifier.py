@@ -23,6 +23,7 @@ from deterministic_mpo_classifier import (
     add_sublist,
     adding_batches,
     prepare_batched_classifier,
+    unitary_qtn
 )
 
 from xmps.ncon import ncon as nc
@@ -230,9 +231,9 @@ def test_prepare_batched_classifier():
     # multiple sites
     D_max = 10
     arr_x_train, arr_y_train = arrange_data(x_train, y_train, arrangement="one class")
-
+    arr_mps_train = mps_encoding(arr_x_train, D_max)
     multiple_site_prepared_classifier = prepare_batched_classifier(
-        arr_x_train, arr_y_train, D_max, batch_num, one_site=False
+        arr_mps_train, arr_y_train, D_max, batch_num, one_site=False
     )
 
     for k, (prep_site, site) in enumerate(
@@ -253,7 +254,7 @@ def test_prepare_batched_classifier():
 
     # one site
     one_site_prepared_classifier = prepare_batched_classifier(
-        arr_x_train, arr_y_train, D_max, batch_num, one_site=True
+        arr_mps_train, arr_y_train, D_max, batch_num, one_site=True
     )
     one_site_mpo_train = mpo_encoding(
         mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
@@ -356,9 +357,30 @@ def test_prepare_batched_classifier():
     assert multi_site_result >= ortho_multi_site_result
     assert one_site_result >= ortho_one_site_result
 
+def test_unitary_qtn():
+    #Test is only for prepared batch classifiers for now..
+    mps_train = mps_encoding(x_train, 32)
+
+    fmpo_classifier = prepare_batched_classifier(
+            mps_train, y_train, 32, 10, one_site=False
+        ).compress_one_site(D = None, orthogonalise = True)
+    qtn_classifier = data_to_QTN(fmpo_classifier.data)
+
+    uclassifier = unitary_qtn(qtn_classifier)
+    #test that everysite is unitary
+    for tensor in uclassifier.tensors:
+        site = tensor.data
+        d,s,i,j = site.shape
+        site = site.transpose(0,2,1,3).reshape(d * i, s * j)
+
+
+        assert np.isclose((site.conj().T @ site ),np.eye(s*j)).all()
+        assert np.isclose((site @ site.conj().T),np.eye(d*i)).all()
+
+
 
 if __name__ == "__main__":
-    test_prepare_batched_classifier()
+    test_unitary_qtn()
 
     # Since one site and multisite are generated differently,
     # They will never be equivalent in losses. Therefore use the

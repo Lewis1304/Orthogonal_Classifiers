@@ -17,6 +17,8 @@ import autograd.numpy as anp
 import quimb.tensor as qtn
 from quimb.tensor.tensor_core import rand_uuid
 from quimb.tensor.optimize import TNOptimizer
+from tqdm import tqdm
+from collections import Counter
 
 from oset import oset
 from xmps.fMPS import fMPS
@@ -80,6 +82,49 @@ def create_hairy_bitstrings_data(
     untruncated = np.append(other_sites, hairy_sites, axis=1)
 
     return untruncated
+
+
+def create_padded_bitstrings_data(possible_labels,
+    uclassifier
+):
+    #Only for onesite at the moment.
+    if not (uclassifier.tensors[-2].shape[1] < uclassifier.tensors[-1].shape[1]):
+        raise Exception('Only works for one site classifiers at the moment')
+
+    max_s = max([site.shape[1] for site in uclassifier.tensors])
+    max_s_others = max([site.shape[1] for site in uclassifier.tensors[:-1]])
+    n_paddings = np.sum([site.shape[1] for site in uclassifier.tensors[:-1]]) - len(uclassifier.tensors[:-1])
+
+    bitstrings_others = [bin(k)[2:].zfill(len(uclassifier.tensors[:-1])) for k in range(2**n_paddings)]
+
+    #other_sites has shape (10,16,9,64) = (labels,padding configrations, sites, max_S from Unitaryfying ())
+    other_sites = np.array([[ [([1,0] + [0]*(max_s - 2)) * (1 - int(bstr_site)) + ([0,1]+ [0]*(max_s - 2))  * int(bstr_site) for bstr_site in bitstring] for bitstring in bitstrings_others] for _ in possible_labels])
+
+
+    num_qubits = int(np.log2(len(possible_labels))) + 1
+    #hairy_site has shape (10, 48, 1,64) = (padding configrations, sites, max_S from Unitaryfying)
+
+    #from scipy.linalg import null_space
+
+    #test = null_space(hairy_sites,10)
+    #assert()
+    #hairy_site = np.array([[list(i) + list(j) for j in np.eye(uclassifier.tensors[-1].shape[1] - 2 ** num_qubits)] for i in np.eye(2 ** num_qubits)][: len(possible_labels)])
+    hairy_site = np.pad([i for i in np.eye(2 ** num_qubits)][:len(possible_labels)], ((0,0), (0,uclassifier.tensors[-1].shape[1] - 2**num_qubits)))
+
+
+    hairy_site = np.expand_dims(np.expand_dims(hairy_site,1),1)
+    #print(other_sites.shape)
+    #print(hairy_site.shape)
+    untruncated = []
+    for label1, label2 in zip(other_sites, hairy_site):
+        padded_configs = []
+        for padded_other in label1:
+            for padded_hairy in label2:
+                padded_configs.append(np.append(padded_other, padded_hairy, axis = 0))
+        untruncated.append(padded_configs)
+
+    return np.array(untruncated).transpose(1,0,2,3)
+
 
 
 """
@@ -306,18 +351,92 @@ def classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings):
     return predictions
 
 
+def ensemble_predictions(ensemble, mps_test, q_hairy_bitstrings):
+    # assumes mps_test is aligned with appropiate labels, y_test
+    predictions = [[
+        [
+            abs(test_image.squeeze().H @ (classifier @ b.squeeze()))
+            for b in q_hairy_bitstrings
+        ]
+        for test_image in mps_test
+    ]
+    for classifier in tqdm(ensemble)]
+    normalised_predictions = [[j / np.sum(j) for j in i] for i in predictions]
+    return normalised_predictions
+
+def padded_classifier_predictions(mpo_classifier, mps_test, padded_q_hairy_bitstrings):
+    # assumes mps_test is aligned with appropiate labels, y_test
+    predictions = [np.sum([[abs(test_image.squeeze().H @ (mpo_classifier @ b.squeeze())) for b in paddings] for paddings in padded_q_hairy_bitstrings],axis = 0) for test_image in tqdm(mps_test)]
+    return predictions
+
+
 def evaluate_classifier_top_k_accuracy(predictions, y_test, k):
-    top_k_predicitions = [
+    top_k_predictions = [
         np.argpartition(image_prediction, -k)[-k:] for image_prediction in predictions
     ]
-    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_predicitions)])
+    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_predictions)])
     return results
 
 
-def evaluate_prediction_variance(predictions):
-    prediction_variance = [np.var(image_prediction) for image_prediction in predictions]
-    return np.mean(prediction_variance)
+def evaluate_soft_ensemble_top_k_accuracy(e_predictions, y_test, k):
+    top_k_ensemble_predictions = np.sum(e_predictions, axis = 0)
+    top_k_predictions = [
+        np.argpartition(image_prediction, -k)[-k:] for image_prediction in top_k_ensemble_predictions
+    ]
+    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_predictions)])
+    return results
 
+def evaluate_hard_ensemble_top_k_accuracy(e_predictions, y_test, k):
+    top_k_ensemble_predictions = np.array([[
+        np.argpartition(image_prediction, -k)[-k:] for image_prediction in top_k_predictions
+    ] for top_k_predictions in e_predictions]).transpose(1,0,2).reshape(len(y_test), -1)
+
+    top_k_ensemble_predictions = [[t[0] for t in Counter(i).most_common(k)] for i in top_k_ensemble_predictions]
+    results = np.mean([int(i in j) for i, j in zip(y_test, top_k_ensemble_predictions)])
+    return results
+
+
+def train_predictions(mps_images, labels, classifier, bitstrings):
+    import tensorflow as tf
+
+    #predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
+    #predictions = np.load(f'all_predictions.npy').reshape(1000,-1)
+    #predictions = np.random.normal(0, 1, (1000,10))
+    mnist = tf.keras.datasets.mnist
+    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+    x_train = np.expand_dims(x_train, -1)[:1000]
+    y_train = y_train[:1000]
+
+    inputs = tf.keras.Input(shape=(28,28,1))
+    x = tf.keras.layers.AveragePooling2D(pool_size = (2,2))(inputs)
+    x = tf.keras.layers.Flatten()(x)
+    outputs = tf.keras.layers.Dense(10, activation = 'relu')(x)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    model.summary()
+
+    model.compile(
+    optimizer=tf.keras.optimizers.Adam(0.001),
+    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
+    metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
+    )
+
+    earlystopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=100)
+
+    history = model.fit(
+        x_train,
+        y_train,
+        epochs=100000,
+        batch_size = 32,
+        callbacks = [earlystopping]
+    )
+    accuracy = history.history['sparse_categorical_accuracy']
+    loss = history.history['loss']
+    np.save('benchmark', loss)
+    np.save('benchmark', accuracy)
+
+    plt.plot(accuracy)
+    plt.show()
 
 if __name__ == "__main__":
     pass
