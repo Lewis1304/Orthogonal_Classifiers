@@ -521,9 +521,147 @@ def tracing_over(classifier, bitstrings, mps_images, labels):
     print(evaluate_classifier_top_k_accuracy(predictions, labels, 1))
     assert()
 
+
+def quantum_stacking(classifier, bitstrings, mps_images, labels):
+    import quimb as qu
+    import quimb.tensor as qtn
+
+    def single_qubit_layer(circ, gate_round=None):
+        """Apply a parametrizable layer of single qubit ``U3`` gates.
+        """
+        for i in range(circ.N):
+            # initialize with random parameters
+            params = qu.randn(3, dist='uniform')
+            circ.apply_gate(
+                'U3', *params, i,
+                gate_round=gate_round, parametrize=True)
+
+    def two_qubit_layer(circ, gate2='CX', reverse=False, gate_round=None):
+        """Apply a layer of constant entangling gates.
+        """
+        regs = range(0, circ.N - 1)
+        if reverse:
+            regs = reversed(regs)
+
+        for i in regs:
+            circ.apply_gate(
+                gate2, i, i + 1, gate_round=gate_round)
+
+    def ansatz_circuit(n, depth, gate2='CX', **kwargs):
+        """Construct a circuit of single qubit and entangling layers.
+        """
+        circ = qtn.Circuit(n, **kwargs)
+
+        for r in range(depth):
+            # single qubit gate layer
+            single_qubit_layer(circ, gate_round=r)
+
+            # alternate between forward and backward CZ layers
+            two_qubit_layer(
+                circ, gate2=gate2, gate_round=r, reverse=r % 2 == 0)
+
+        # add a final single qubit layer
+        single_qubit_layer(circ, gate_round=r + 1)
+
+        return circ
+
+
+    bitstrings_qubits = [bitstring.squeeze().tensors[-1].data.reshape(2,2,2,2) for bitstring in bitstrings]
+    qtn_bitstrings = [qtn.Tensor(bitstring_qubits, inds = ['b4', 'b5', 'b6', 'b7']) for bitstring_qubits in bitstrings_qubits]
+
+    n = 4
+    ancillae_qubits = np.eye(2**n)[0]
+    prediction_and_ancillae_qubits = [qtn.Tensor(np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data).reshape(*[2]*(2*n)), inds = [f'k{i}' for i in range(2*n)]) for mps_image in mps_images]
+
+
+    circ = ansatz_circuit(2*n, n, gate2='CX')
+    #circ = qtn.Circuit(8)
+    #for i in range(8):
+    #    circ.apply_gate('X',i)
+    #    circ.apply_gate('X',i)
+    V_opt = circ.uni
+    """
+    V.draw(color = ['U3', 'CX'], show_inds = True)
+
+    def loss(V, prediction_and_ancillae_qubits, qtn_bitstrings, labels):
+        overlaps = [
+            anp.log(
+                (
+                    prediction_and_ancillae_qubits[i].squeeze().H
+                    & (V & qtn_bitstrings[labels[i]].squeeze())
+                ).contract(all).norm()
+            )
+            for i in range(len(prediction_and_ancillae_qubits))
+        ]
+        return -np.sum(overlaps) / len(prediction_and_ancillae_qubits)
+
+    optmzr = qtn.TNOptimizer(
+            V,  # our initial input, the tensors of which to optimize
+            loss_fn = lambda V: loss(V, prediction_and_ancillae_qubits, qtn_bitstrings, labels),
+            autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
+            optimizer="nadam",  # supplied to scipy.minimize
+            )
+    #(qtn_bitstrings[0] & (V & prediction_and_ancillae_qubits[0])).draw(color = ['U3', 'CZ', 'B'], show_inds = True)
+    V_opt = optmzr.optimize_basinhopping(n=10, nhop=10)
+
+    predictions = [
+            [
+                (p.squeeze().H
+                & (V & b.squeeze())
+                ).contract(all).norm()
+                for b in qtn_bitstrings
+            ]
+            for p in prediction_and_ancillae_qubits
+        ]
+    accuracies = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
+    print(accuracies)
+    """
+
+
+    def optimiser(circ):
+        optmzr = qtn.TNOptimizer(
+                circ,  # our initial input, the tensors of which to optimize
+                loss_fn = lambda V: loss(V, prediction_and_ancillae_qubits, qtn_bitstrings, labels),
+                autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
+                optimizer="nadam",  # supplied to scipy.minimize
+                )
+        return optmzr
+
+    predicitions_store = []
+    accuracies = []
+    for i in tqdm(range(100)):
+        optmzr = optimiser(V_opt)
+        V_opt = optmzr.optimize_basinhopping(n=1, nhop=10)
+
+        predictions = [
+                [
+                    (p.squeeze().H
+                    & (V & b.squeeze())
+                    ).contract(all).norm()
+                    for b in qtn_bitstrings
+                ]
+                for p in prediction_and_ancillae_qubits
+            ]
+
+        predicitions_store.append(predictions)
+        accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
+        accuracies.append(accuracy)
+
+        losses.append(optmzr.loss)
+
+        plot_results((accuracies, losses, predicitions_store), 'quantum_circuit')
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
 
-    num_samples = 1000
+    num_samples = 100
     batch_num = 10
 
     one_site = True
@@ -549,28 +687,20 @@ if __name__ == "__main__":
     )
 
     mps_images, labels = data
+    #print(mps_images[0].squeeze().H @ (classifier.squeeze() @ bitstrings[5].squeeze()))
+    quantum_stacking(classifier, bitstrings, mps_images, labels)
+    assert()
 
     #x_train, y_train, x_test, y_test = load_data(
     #    1000, shuffle=False, equal_numbers=True
     #)
     #train_predictions(x_train, y_train, classifier, bitstrings)
-    tracing_over(classifier, bitstrings, mps_images, labels)
+    #tracing_over(classifier, bitstrings, mps_images, labels)
 
-    #test = ncon((site, site.conj()), [[1,2,-3,4], [1,2,-5,4]])
-    #print(np.diag(test))
-    #test = ncon((site.conj(), site), [[1,2,-3,4], [1,2,-5,4]])
-    #print(np.diag(test))
-
-    #Convert into unitaries.
-    #Check result is still the same?
-    #Create padded bitstrings- use earlier commits
-    #Create evaluation function- use earlier commits
-
-
-    #predictions = classifier_predictions(classifier.squeeze(), mps_images, bitstrings)
-    #accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
-    #print(accuracy)
-    #assert()
+    predictions = classifier_predictions(uclassifier.squeeze(), mps_images, bitstrings)
+    accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
+    print(accuracy)
+    assert()
 
     all_classes_experiment(
         classifier,
