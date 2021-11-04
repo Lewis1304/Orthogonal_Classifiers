@@ -1,5 +1,5 @@
 from variational_mpo_classifiers import *
-from deterministic_mpo_classifier import prepare_batched_classifier, prepare_ensemble, unitary_qtn
+from deterministic_mpo_classifier import prepare_batched_classifier, prepare_ensemble, unitary_qtn, prepare_sum_states, adding_batches
 import os
 from tqdm import tqdm
 
@@ -36,7 +36,10 @@ def initialise_experiment(
     x_train, y_train, x_test, y_test = load_data(
         n_samples, shuffle=False, equal_numbers=True
     )
+
+    #print('Loaded Data!')
     x_train, y_train = arrange_data(x_train, y_train, arrangement=arrangement)
+    #print('Arranged Data!')
 
     # All possible class labels
     possible_labels = list(set(y_train))
@@ -55,9 +58,31 @@ def initialise_experiment(
     # MPS encode data
     mps_train = mps_encoding(x_train, D_encode)
 
+    #print('Encoded Data!')
+
+
     # Initial Classifier
     if initialise_classifier:
+        """
         batch_num, one_site_adding, ortho_at_end = initialise_classifier_settings
+
+        sum_states = prepare_sum_states(mps_train, y_train, D_batch, batch_num, one_site=one_site_adding)
+        print('Added Data!')
+
+        classifier_data_non_ortho = adding_batches(sum_states, D_final, 10)[0].compress_one_site(
+            D=D_final, orthogonalise=False
+        )
+
+        classifier_data_ortho = adding_batches(sum_states, D_final, 10)[0].compress_one_site(
+            D=D_final, orthogonalise=True
+        )
+        non_ortho_mpo_classifier = data_to_QTN(classifier_data_non_ortho.data)
+        ortho_mpo_classifier = data_to_QTN(classifier_data_ortho.data)
+
+        save_qtn_classifier(non_ortho_mpo_classifier, f'Big_Classifiers/non_ortho_mpo_classifier_{D_final}')
+        save_qtn_classifier(ortho_mpo_classifier, f'Big_Classifiers/ortho_mpo_classifier_{D_final}')
+        """
+
         fmpo_classifier = prepare_batched_classifier(
             mps_train, y_train, D_batch, batch_num, one_site=one_site_adding
         )
@@ -73,16 +98,19 @@ def initialise_experiment(
                 D=D_final, orthogonalise=ortho_at_end
             )
             mpo_classifier = data_to_QTN(classifier_data.data)#.squeeze()
-
     else:
         # MPO encode data (already encoded as mps)
         # Has shape: # classes, mpo.shape
-        mpo_classifier = create_mpo_classifier(
-            mps_train, q_hairy_bitstrings, seed=420, full_sized=True
-        ).squeeze()
+        old_classifier_data = prepare_batched_classifier(
+            mps_train[:100], y_train[:100], 32, 10, one_site=False
+        ).compress_one_site(D=32, orthogonalise=False)
+        old_classifier = data_to_QTN(old_classifier_data.data)#.squeeze()
+        mpo_classifier = create_mpo_classifier_from_initialised_classifier(old_classifier).squeeze()
+        #mpo_classifier = create_mpo_classifier(
+        #    mps_train, q_hairy_bitstrings, seed=420, full_sized=True
+        #).squeeze()
 
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
-
 
 """
 Experiment
@@ -103,16 +131,14 @@ def all_classes_experiment(
     classifier_opt = mpo_classifier
     #classifier_opt = pad_qtn_classifier(mpo_classifier)
     # classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
-
+    """
     initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
 
     predicitions_store = [initial_predictions]
     accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 1)]
     # variances = [evaluate_prediction_variance(initial_predictions)]
     losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
-
-    print(accuracies)
-    assert()
+    """
 
     def optimiser(classifier):
         optmzr = TNOptimizer(
@@ -124,28 +150,35 @@ def all_classes_experiment(
         )
         return optmzr
 
+    save_qtn_classifier(classifier_opt, title + '/mpo_classifier_epoch_0')
+
     print(classifier_opt)
     print(q_hairy_bitstrings[0])
     best_accuracy = 0
-    for i in range(1000):
+
+    for i in range(1,1000):
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
 
+        if i % 10 == 0:
+            save_qtn_classifier(classifier_opt, title + f'/mpo_classifier_epoch_{i}')
+
+        """
         predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
         predicitions_store.append(predictions)
         accuracy = evaluate_classifier_top_k_accuracy(predictions, y_train, 1)
         accuracies.append(accuracy)
-        # variances.append(evaluate_prediction_variance(predictions))
 
         losses.append(optmzr.loss)
 
         plot_results((accuracies, losses, predicitions_store), title)
-
+        """
+        """
         if accuracy > best_accuracy:
             best_accuracy = accuracy
             save_qtn_classifier(classifier_opt, title)
-
-    return accuracies, losses
+        """
+    #return accuracies, losses
 
 
 def svd_classifier(dir, mps_images, labels):
@@ -299,8 +332,6 @@ def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
 
     print('Hard result:', hard_result)
     print('Soft result:', soft_result)
-
-
 
 
 """
@@ -526,30 +557,31 @@ def quantum_stacking(classifier, bitstrings, mps_images, labels):
     import quimb as qu
     import quimb.tensor as qtn
 
-    def single_qubit_layer(circ, gate_round=None):
-        """Apply a parametrizable layer of single qubit ``U3`` gates.
-        """
-        for i in range(circ.N):
-            # initialize with random parameters
-            params = qu.randn(3, dist='uniform')
-            circ.apply_gate(
-                'U3', *params, i,
-                gate_round=gate_round, parametrize=True)
-
-    def two_qubit_layer(circ, gate2='CX', reverse=False, gate_round=None):
-        """Apply a layer of constant entangling gates.
-        """
-        regs = range(0, circ.N - 1)
-        if reverse:
-            regs = reversed(regs)
-
-        for i in regs:
-            circ.apply_gate(
-                gate2, i, i + 1, gate_round=gate_round)
-
     def ansatz_circuit(n, depth, gate2='CX', **kwargs):
         """Construct a circuit of single qubit and entangling layers.
         """
+        def single_qubit_layer(circ, gate_round=None):
+            """Apply a parametrizable layer of single qubit ``U3`` gates.
+            """
+            for i in range(circ.N):
+                # initialize with random parameters
+                #params = qu.randn(3, dist='uniform')
+                params = np.zeros(3)
+                circ.apply_gate(
+                    'U3', *params, i,
+                    gate_round=gate_round, parametrize=True)
+
+        def two_qubit_layer(circ, gate2='CX', reverse=False, gate_round=None):
+            """Apply a layer of constant entangling gates.
+            """
+            regs = range(0, circ.N - 1)
+            if reverse:
+                regs = reversed(regs)
+
+            for i in regs:
+                circ.apply_gate(
+                    gate2, i, i + 1, gate_round=gate_round)
+
         circ = qtn.Circuit(n, **kwargs)
 
         for r in range(depth):
@@ -565,108 +597,99 @@ def quantum_stacking(classifier, bitstrings, mps_images, labels):
 
         return circ
 
+    def overlap(predicition, V, bitstring):
+        return (predicition.squeeze().H @ (V @ bitstring.squeeze())).norm()**2
 
-    bitstrings_qubits = [bitstring.squeeze().tensors[-1].data.reshape(2,2,2,2) for bitstring in bitstrings]
-    qtn_bitstrings = [qtn.Tensor(bitstring_qubits, inds = ['b4', 'b5', 'b6', 'b7']) for bitstring_qubits in bitstrings_qubits]
-
-    n = 4
-    ancillae_qubits = np.eye(2**n)[0]
-    prediction_and_ancillae_qubits = [qtn.Tensor(np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data).reshape(*[2]*(2*n)), inds = [f'k{i}' for i in range(2*n)]) for mps_image in mps_images]
-
-
-    circ = ansatz_circuit(2*n, n, gate2='CX')
-    #circ = qtn.Circuit(8)
-    #for i in range(8):
-    #    circ.apply_gate('X',i)
-    #    circ.apply_gate('X',i)
-    V_opt = circ.uni
-    """
-    V.draw(color = ['U3', 'CX'], show_inds = True)
-
-    def loss(V, prediction_and_ancillae_qubits, qtn_bitstrings, labels):
+    def loss(V, qtn_prediction_and_ancillae_qubits, qtn_bitstrings, labels):
         overlaps = [
-            anp.log(
-                (
-                    prediction_and_ancillae_qubits[i].squeeze().H
-                    & (V & qtn_bitstrings[labels[i]].squeeze())
-                ).contract(all).norm()
-            )
-            for i in range(len(prediction_and_ancillae_qubits))
-        ]
-        return -np.sum(overlaps) / len(prediction_and_ancillae_qubits)
-
-    optmzr = qtn.TNOptimizer(
-            V,  # our initial input, the tensors of which to optimize
-            loss_fn = lambda V: loss(V, prediction_and_ancillae_qubits, qtn_bitstrings, labels),
-            autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
-            optimizer="nadam",  # supplied to scipy.minimize
-            )
-    #(qtn_bitstrings[0] & (V & prediction_and_ancillae_qubits[0])).draw(color = ['U3', 'CZ', 'B'], show_inds = True)
-    V_opt = optmzr.optimize_basinhopping(n=10, nhop=10)
-
-    predictions = [
-            [
-                (p.squeeze().H
-                & (V & b.squeeze())
-                ).contract(all).norm()
-                for b in qtn_bitstrings
+            anp.log(overlap(qtn_prediction_and_ancillae_qubits[i], V, qtn_bitstrings[labels[i]]))
+            for i in range(len(qtn_prediction_and_ancillae_qubits))
             ]
-            for p in prediction_and_ancillae_qubits
-        ]
-    accuracies = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
-    print(accuracies)
-    """
+        return -np.sum(overlaps) / len(qtn_prediction_and_ancillae_qubits)
 
+
+    def abs_stoudenmire_loss(V, qtn_prediction_and_ancillae_qubits, qtn_bitstrings, labels):
+        possible_labels = list(set(labels))
+        overlaps = [
+            [
+                (
+                    (qtn_prediction_and_ancillae_qubits[i].squeeze().H @ (V @ qtn_bitstrings[label].squeeze())).norm()**2
+                    - int(labels[i] == label)
+                )
+                ** 2
+                for label in possible_labels
+            ]
+            for i in range(len(qtn_prediction_and_ancillae_qubits))
+        ]
+        return np.sum(overlaps) / len(qtn_prediction_and_ancillae_qubits)
+
+    def normalize_tn(tn):
+        return (256**0.5) * tn / (tn.H @ tn) ** 0.5
 
     def optimiser(circ):
         optmzr = qtn.TNOptimizer(
                 circ,  # our initial input, the tensors of which to optimize
-                loss_fn = lambda V: loss(V, prediction_and_ancillae_qubits, qtn_bitstrings, labels),
+                loss_fn = lambda V: loss(V, qtn_prediction_and_ancillae_qubits, qtn_bitstrings, labels),
+                norm_fn=normalize_tn,
                 autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
                 optimizer="nadam",  # supplied to scipy.minimize
                 )
         return optmzr
 
-    predicitions_store = []
-    accuracies = []
-    for i in tqdm(range(100)):
+    #Reshape label site into qubit states
+    bitstrings_qubits = [bitstring.squeeze().tensors[-1].data.reshape(2,2,2,2) for bitstring in bitstrings]
+    qtn_bitstrings = [qtn.Tensor(bitstring_qubits, inds = ['b4', 'b5', 'b6', 'b7']) for bitstring_qubits in bitstrings_qubits]
+
+    n = 4
+    #Ancillae start in state |00...>
+    ancillae_qubits = np.eye(2**n)[0]
+    #Tensor product ancillae with predicition qubits
+    #Amount of ancillae equal to amount of predicition qubits
+    qtn_prediction_and_ancillae_qubits = [qtn.Tensor(np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data).reshape(*[2]*(2*n)), inds = [f'k{i}' for i in range(2*n)]) for mps_image in mps_images]
+
+    #Normalise predictions
+    qtn_prediction_and_ancillae_qubits = [i/(i.H @ i)**0.5 for i in qtn_prediction_and_ancillae_qubits]
+
+    circ = ansatz_circuit(2*n, n, gate2='CX')
+    V_opt = circ.uni
+
+    #test = (V_opt & qtn_prediction_and_ancillae_qubits[0]).contract(all)
+    #print(qtn_prediction_and_ancillae_qubits[0].H @ qtn_prediction_and_ancillae_qubits[0])
+    #print(test.H @ test)
+    #assert()
+
+    predictions = [[overlap(p, V_opt, b) for b in qtn_bitstrings] for p in qtn_prediction_and_ancillae_qubits]
+    accuracies = [evaluate_classifier_top_k_accuracy(predictions, labels, 1)]
+    losses = [loss(V_opt, qtn_prediction_and_ancillae_qubits, qtn_bitstrings, labels)]
+    print(accuracies)
+
+    for i in tqdm(range(1, 100)):
         optmzr = optimiser(V_opt)
-        V_opt = optmzr.optimize_basinhopping(n=1, nhop=10)
-
-        predictions = [
-                [
-                    (p.squeeze().H
-                    & (V & b.squeeze())
-                    ).contract(all).norm()
-                    for b in qtn_bitstrings
-                ]
-                for p in prediction_and_ancillae_qubits
-            ]
-
-        predicitions_store.append(predictions)
+        V_opt = optmzr.optimize(1)
+        test = (V_opt & qtn_prediction_and_ancillae_qubits[0]).contract(all)
+        print(test.H @ test)
+        #V_opt = optmzr.optimize_basinhopping(n=1, nhop=10)
+    #if i % 10 == 0:
+        predictions = [[overlap(p, V_opt, b) for b in qtn_bitstrings] for p in qtn_prediction_and_ancillae_qubits]
         accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
         accuracies.append(accuracy)
-
         losses.append(optmzr.loss)
-
-        plot_results((accuracies, losses, predicitions_store), 'quantum_circuit')
-
-
-
-
-
-
-
+        plot_results((accuracies, losses, None), 'quantum_circuit_5')
 
 
 if __name__ == "__main__":
 
-    num_samples = 100
-    batch_num = 10
+
+    #Biggest equal size is n_train = 5329 * 10 with batch_num = 73
+    #Can use n_train = 4913 with batch_num = 17
+    num_samples = 5329*10
+    batch_num = 73
+    #num_samples = 100
+    #batch_num = 10
 
     one_site = True
     one_site_adding = False
-    ortho_at_end = True
+    ortho_at_end = False
 
     D_total = 32
     D_encode = D_total
@@ -675,21 +698,21 @@ if __name__ == "__main__":
     D = (D_encode, D_batch, D_final)
     #deterministic_mpo_classifier_experiment(1000, 10)
     #assert()
-
     data, classifier, bitstrings = initialise_experiment(
-        num_samples,
-        D,
-        arrangement="one class",
-        truncated=True,
-        one_site=one_site,
-        initialise_classifier=True,
-        initialise_classifier_settings=(batch_num, one_site_adding, ortho_at_end),
-    )
-
+            num_samples,
+            D,
+            arrangement="one class",
+            truncated=True,
+            one_site=one_site,
+            initialise_classifier=False,
+            initialise_classifier_settings=(batch_num, one_site_adding, ortho_at_end),
+        )
     mps_images, labels = data
+
     #print(mps_images[0].squeeze().H @ (classifier.squeeze() @ bitstrings[5].squeeze()))
-    quantum_stacking(classifier, bitstrings, mps_images, labels)
-    assert()
+
+    #quantum_stacking(classifier, bitstrings, mps_images, labels)
+    #assert()
 
     #x_train, y_train, x_test, y_test = load_data(
     #    1000, shuffle=False, equal_numbers=True
@@ -697,10 +720,11 @@ if __name__ == "__main__":
     #train_predictions(x_train, y_train, classifier, bitstrings)
     #tracing_over(classifier, bitstrings, mps_images, labels)
 
-    predictions = classifier_predictions(uclassifier.squeeze(), mps_images, bitstrings)
-    accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
-    print(accuracy)
-    assert()
+    #print('Evaluating Data!')
+    #predictions = classifier_predictions(classifier.squeeze(), mps_images, bitstrings)
+    #accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
+    #print(accuracy)
+    #assert()
 
     all_classes_experiment(
         classifier,
@@ -708,7 +732,6 @@ if __name__ == "__main__":
         bitstrings,
         labels,
         classifier_predictions,
-        abs_stoudenmire_loss,
-        "TEST",
-        # "full_sized_random_one_site_false",
+        cross_entropy_loss,
+        "cross_entropy_random",
     )
