@@ -102,7 +102,7 @@ def initialise_experiment(
         # MPO encode data (already encoded as mps)
         # Has shape: # classes, mpo.shape
         old_classifier_data = prepare_batched_classifier(
-            mps_train[:100], y_train[:100], 32, 10, one_site=False
+            mps_train[:10], list(range(10)), 32, 10, one_site=False
         ).compress_one_site(D=32, orthogonalise=False)
         old_classifier = data_to_QTN(old_classifier_data.data)#.squeeze()
         mpo_classifier = create_mpo_classifier_from_initialised_classifier(old_classifier).squeeze()
@@ -160,8 +160,8 @@ def all_classes_experiment(
         optmzr = optimiser(classifier_opt)
         classifier_opt = optmzr.optimize(1)
 
-        if i % 10 == 0:
-            save_qtn_classifier(classifier_opt, title + f'/mpo_classifier_epoch_{i}')
+        #if i % 10 == 0:
+        save_qtn_classifier(classifier_opt, title + f'/mpo_classifier_epoch_{i}')
 
         """
         predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
@@ -677,6 +677,48 @@ def quantum_stacking(classifier, bitstrings, mps_images, labels):
         plot_results((accuracies, losses, None), 'quantum_circuit_5')
 
 
+def obtain_deterministic_accuracies(bitstrings):
+    n_train_samples = 5329*10
+    n_test_samples = 10000
+    #n_samples = 100
+
+    x_train, y_train, x_test, y_test = load_data(
+        n_train_samples,n_test_samples, shuffle=False, equal_numbers=True
+    )
+
+    #print('Loaded Data!')
+    x_train, y_train = arrange_data(x_train, y_train, arrangement='one class')
+    #print('Arranged Data!')
+
+
+    # MPS encode data
+    D_encode = 32
+    mps_train = mps_encoding(x_train, D_encode)
+    mps_test = mps_encoding(x_test, D_encode)
+
+
+    training_accuracies = []
+    test_accuracies = []
+    for i in tqdm(range(2,33)):
+        print(f'Bond order: {i}')
+        non_ortho_classifier = load_qtn_classifier(f'Big_Classifiers/non_ortho_mpo_classifier_{i}')
+        ortho_classifier = load_qtn_classifier(f'Big_Classifiers/ortho_mpo_classifier_{i}')
+
+        print('Training predicitions: ')
+        training_predictions = classifier_predictions(non_ortho_classifier.squeeze(), mps_train, bitstrings)
+        training_accuracy = evaluate_classifier_top_k_accuracy(training_predictions, y_train, 1)
+
+        print('Test predicitions: ')
+        test_predictions = classifier_predictions(ortho_classifier.squeeze(), mps_test, bitstrings)
+        test_accuracy = evaluate_classifier_top_k_accuracy(test_predictions, y_test, 1)
+
+        training_accuracies.append(training_accuracy)
+        test_accuracies.append(test_accuracy)
+
+        np.save('Classifiers/Big_Classifiers/training_accuracies', training_accuracies)
+        np.save('Classifiers/Big_Classifiers/test_accuracies', test_accuracies)
+    assert()
+
 if __name__ == "__main__":
 
 
@@ -709,6 +751,7 @@ if __name__ == "__main__":
         )
     mps_images, labels = data
 
+    #obtain_deterministic_accuracies(bitstrings)
     #print(mps_images[0].squeeze().H @ (classifier.squeeze() @ bitstrings[5].squeeze()))
 
     #quantum_stacking(classifier, bitstrings, mps_images, labels)
