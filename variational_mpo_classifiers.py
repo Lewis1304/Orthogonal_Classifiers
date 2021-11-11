@@ -193,7 +193,7 @@ def create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=None, full_sized=F
 
 
 def create_mpo_classifier_from_initialised_classifier(
-    initialised_classifier, seed=None
+    initialised_classifier, seed=420
 ):
 
     # Create MPO classifier
@@ -346,7 +346,7 @@ def classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings):
             abs(test_image.squeeze().H @ (mpo_classifier @ b.squeeze()))
             for b in q_hairy_bitstrings
         ]
-        for test_image in mps_test
+        for test_image in tqdm(mps_test)
     ]
     return predictions
 
@@ -396,47 +396,81 @@ def evaluate_hard_ensemble_top_k_accuracy(e_predictions, y_test, k):
     return results
 
 
-def train_predictions(mps_images, labels, classifier, bitstrings):
-    import tensorflow as tf
+def train_predictions(mps_images, labels, classifier, bitstrings, title, n):
 
-    #predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
-    #predictions = np.load(f'all_predictions.npy').reshape(1000,-1)
-    #predictions = np.random.normal(0, 1, (1000,10))
-    mnist = tf.keras.datasets.mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    #Ancillae start in state |00...>
+    ancillae_qubits = np.eye(2**n)[0]
+    #Tensor product ancillae with predicition qubits
+    #Amount of ancillae equal to amount of predicition qubits
+    training_predictions = np.array([np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_images)])
 
-    x_train = np.expand_dims(x_train, -1)[:1000]
-    y_train = y_train[:1000]
-
+    #Create predictions
+    #training_predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
+    #accuracy = evaluate_classifier_top_k_accuracy(training_predictions, labels, 1)
+    #print(accuracy)
+    """
+    x_train, y_train, x_test, y_test = load_data(
+        100,10000, shuffle=False, equal_numbers=True
+    )
+    D_test = 32
+    mps_test = mps_encoding(x_test, D_test)
+    test_predictions = np.array(classifier_predictions(classifier, mps_test, bitstrings))
+    accuracy = evaluate_classifier_top_k_accuracy(test_predictions, y_test, 1)
+    print(accuracy)
+    """
+    """
     inputs = tf.keras.Input(shape=(28,28,1))
     x = tf.keras.layers.AveragePooling2D(pool_size = (2,2))(inputs)
     x = tf.keras.layers.Flatten()(x)
-    outputs = tf.keras.layers.Dense(10, activation = 'relu')(x)
+    outputs = tf.keras  .layers.Dense(10, activation = 'relu')(x)
+    model = tf.keras.Model(inputs=inputs, outputs=outputs)
+    model.summary()
+    """
+    inputs = tf.keras.Input(shape=(training_predictions.shape[1],))
+    #inputs = tf.keras.Input(shape=(qtn_prediction_and_ancillae_qubits.shape[1],))
+    outputs = tf.keras.layers.Dense(10, activation = 'sigmoid')(inputs)
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.summary()
 
+
     model.compile(
-    optimizer=tf.keras.optimizers.Adam(0.001),
+    optimizer=tf.keras.optimizers.Adam(),
     loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
     metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
     )
 
-    earlystopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=100)
+    #earlystopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=100, restore_best_weights=True)
 
     history = model.fit(
-        x_train,
-        y_train,
-        epochs=100000,
+        training_predictions,
+        labels,
+        epochs=10000,
         batch_size = 32,
-        callbacks = [earlystopping]
+        verbose = 0
     )
-    accuracy = history.history['sparse_categorical_accuracy']
-    loss = history.history['loss']
-    np.save('benchmark', loss)
-    np.save('benchmark', accuracy)
 
-    plt.plot(accuracy)
+
+    loss1, acc1, = model.evaluate(training_predictions, labels)
+
+    from scipy.linalg import polar
+    U = polar(model.layers[1].get_weights()[0])[0]
+    model.layers[1].set_weights([U])
+
+    loss2, acc2 = model.evaluate(training_predictions, labels)
+    return acc1, acc2
+
+    assert()
+    model.save('results/' + title + '/my_model')
+    train_accuracy = history.history['sparse_categorical_accuracy']
+    train_loss = history.history['loss']
+    plt.plot(train_accuracy)
     plt.show()
+    """
+    np.save('results/' + title + '/train_loss', train_accuracy)
+    np.save('results/' + title + '/train_accuracy' , train_loss)
+    """
+    #plt.plot(accuracy)
+    #plt.show()
 
 if __name__ == "__main__":
     pass

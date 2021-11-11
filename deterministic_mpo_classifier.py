@@ -117,6 +117,35 @@ def prepare_batched_classifier(
 
     return MPOs[0]
 
+def prepare_sum_states(
+    mps_train, labels, D_total, batch_num, one_site=False
+):
+
+    possible_labels = list(set(labels))
+    n_hairy_sites = int(np.ceil(mlog(len(possible_labels), 4)))
+    n_sites = mps_train[0].num_tensors
+
+    #Bitstrings have to be non-truncated
+
+    hairy_bitstrings_data = create_hairy_bitstrings_data(
+        possible_labels, n_hairy_sites, n_sites, one_site
+    )
+    q_hairy_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, n_hairy_sites, n_sites, truncated=True
+    )
+    train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
+
+    # Converting qMPOs into fMPOs
+    MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
+
+    # Adding fMPOs together
+    while len(MPOs) > batch_num:
+        MPOs = adding_batches(MPOs, D_total, batch_num)
+
+    return MPOs
+
+
+
 """
 Ensemble classifiers
 """
