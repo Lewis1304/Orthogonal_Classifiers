@@ -396,18 +396,23 @@ def evaluate_hard_ensemble_top_k_accuracy(e_predictions, y_test, k):
     return results
 
 
-def train_predictions(mps_images, labels, classifier, bitstrings, title, n):
+
+
+def train_predictions(mps_images, labels, classifier, bitstrings):#, title, n):
 
     #Ancillae start in state |00...>
-    ancillae_qubits = np.eye(2**n)[0]
+    #n=0
+    #ancillae_qubits = np.eye(2**n)[0]
     #Tensor product ancillae with predicition qubits
     #Amount of ancillae equal to amount of predicition qubits
-    training_predictions = np.array([np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_images)])
+    #training_predictions = np.array([np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_images)])
+    training_predictions = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in mps_images])
+    np.save('initial_label_qubit_states_2',training_predictions)
 
     #Create predictions
-    #training_predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
-    #accuracy = evaluate_classifier_top_k_accuracy(training_predictions, labels, 1)
-    #print(accuracy)
+    test_training_predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
+    test_accuracy = evaluate_classifier_top_k_accuracy(test_training_predictions, labels, 1)
+    print(test_accuracy)
     """
     x_train, y_train, x_test, y_test = load_data(
         100,10000, shuffle=False, equal_numbers=True
@@ -449,28 +454,15 @@ def train_predictions(mps_images, labels, classifier, bitstrings, title, n):
         verbose = 0
     )
 
+    trained_training_predictions = model.predict(training_predictions)
+    np.save('final_label_qubit_states_2',trained_training_predictions)
 
-    loss1, acc1, = model.evaluate(training_predictions, labels)
+    #np.save('trained_predicitions_1000_classifier_32_1000_train_images', trained_training_predictions)
+    accuracy = evaluate_classifier_top_k_accuracy(trained_training_predictions, labels, 1)
+    print(accuracy)
 
-    from scipy.linalg import polar
-    U = polar(model.layers[1].get_weights()[0])[0]
-    model.layers[1].set_weights([U])
 
-    loss2, acc2 = model.evaluate(training_predictions, labels)
-    return acc1, acc2
 
-    assert()
-    model.save('results/' + title + '/my_model')
-    train_accuracy = history.history['sparse_categorical_accuracy']
-    train_loss = history.history['loss']
-    plt.plot(train_accuracy)
-    plt.show()
-    """
-    np.save('results/' + title + '/train_loss', train_accuracy)
-    np.save('results/' + title + '/train_accuracy' , train_loss)
-    """
-    #plt.plot(accuracy)
-    #plt.show()
 
 if __name__ == "__main__":
     pass

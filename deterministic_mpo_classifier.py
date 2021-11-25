@@ -144,6 +144,13 @@ def prepare_sum_states(
 
     return MPOs
 
+def prepare_linear_classifier(mps_train, labels):
+    possible_labels = list(set(labels))
+    return [np.array(mps_train)[label == labels] for label in possible_labels]
+
+def linear_classifier_predictions(classifier, mps_test, labels):
+    possible_labels = list(set(labels))
+    return np.array([[np.sum([(i & image).squeeze().contract(all) for i in classifier[label]]) for label in possible_labels] for image in tqdm(mps_test)])
 
 
 """
