@@ -12,7 +12,6 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import idx2numpy as idn
-import autograd.numpy as anp
 
 import quimb.tensor as qtn
 from quimb.tensor.tensor_core import rand_uuid
@@ -394,75 +393,6 @@ def evaluate_hard_ensemble_top_k_accuracy(e_predictions, y_test, k):
     top_k_ensemble_predictions = [[t[0] for t in Counter(i).most_common(k)] for i in top_k_ensemble_predictions]
     results = np.mean([int(i in j) for i, j in zip(y_test, top_k_ensemble_predictions)])
     return results
-
-
-
-
-def train_predictions(mps_images, labels, classifier, bitstrings):#, title, n):
-
-    #Ancillae start in state |00...>
-    #n=0
-    #ancillae_qubits = np.eye(2**n)[0]
-    #Tensor product ancillae with predicition qubits
-    #Amount of ancillae equal to amount of predicition qubits
-    #training_predictions = np.array([np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_images)])
-    training_predictions = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in mps_images])
-    np.save('initial_label_qubit_states_2',training_predictions)
-
-    #Create predictions
-    test_training_predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
-    test_accuracy = evaluate_classifier_top_k_accuracy(test_training_predictions, labels, 1)
-    print(test_accuracy)
-    """
-    x_train, y_train, x_test, y_test = load_data(
-        100,10000, shuffle=False, equal_numbers=True
-    )
-    D_test = 32
-    mps_test = mps_encoding(x_test, D_test)
-    test_predictions = np.array(classifier_predictions(classifier, mps_test, bitstrings))
-    accuracy = evaluate_classifier_top_k_accuracy(test_predictions, y_test, 1)
-    print(accuracy)
-    """
-    """
-    inputs = tf.keras.Input(shape=(28,28,1))
-    x = tf.keras.layers.AveragePooling2D(pool_size = (2,2))(inputs)
-    x = tf.keras.layers.Flatten()(x)
-    outputs = tf.keras  .layers.Dense(10, activation = 'relu')(x)
-    model = tf.keras.Model(inputs=inputs, outputs=outputs)
-    model.summary()
-    """
-    inputs = tf.keras.Input(shape=(training_predictions.shape[1],))
-    #inputs = tf.keras.Input(shape=(qtn_prediction_and_ancillae_qubits.shape[1],))
-    outputs = tf.keras.layers.Dense(10, activation = 'sigmoid')(inputs)
-    model = tf.keras.Model(inputs=inputs, outputs=outputs)
-    model.summary()
-
-
-    model.compile(
-    optimizer=tf.keras.optimizers.Adam(),
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-    metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
-    )
-
-    #earlystopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=100, restore_best_weights=True)
-
-    history = model.fit(
-        training_predictions,
-        labels,
-        epochs=10000,
-        batch_size = 32,
-        verbose = 0
-    )
-
-    trained_training_predictions = model.predict(training_predictions)
-    np.save('final_label_qubit_states_2',trained_training_predictions)
-
-    #np.save('trained_predicitions_1000_classifier_32_1000_train_images', trained_training_predictions)
-    accuracy = evaluate_classifier_top_k_accuracy(trained_training_predictions, labels, 1)
-    print(accuracy)
-
-
-
 
 if __name__ == "__main__":
     pass

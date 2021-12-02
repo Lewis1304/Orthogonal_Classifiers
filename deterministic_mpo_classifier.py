@@ -234,34 +234,35 @@ def batch_initialise_classifier():
     predictions = classifier_predictions(qtn_classifier, mps_train, q_hairy_bitstrings)
     print(evaluate_classifier_top_k_accuracy(predictions, train_labels, 1))
 
+
+def unitary_extension(Q):
+
+    def direct_sum(A, B):
+        '''direct sum of two matrices'''
+        (a1, a2), (b1, b2) = A.shape, B.shape
+        O = np.zeros((a2, b1))
+        return np.block([[A, O], [O.T, B]])
+
+    '''extend an isometry to a unitary (doesn't check its an isometry)'''
+    s = Q.shape
+    flipped=False
+    N1 = null_space(Q)
+    N2 = null_space(Q.conj().T)
+
+
+    if s[0]>s[1]:
+        Q_ = np.concatenate([Q, N2], 1)
+    elif s[0]<s[1]:
+        Q_ = np.concatenate([Q.conj().T, N1], 1).conj().T
+    else:
+        Q_ = Q
+    return Q_
+
 def unitary_qtn(qtn):
     #Only works for powers of bond dimensions which are (due to reshaping of tensors)
     D_max = max([tensor.shape[-1] for tensor in qtn.tensors])
     if not mlog(D_max,2).is_integer():
         raise Exception('Classifier has to have bond order of power 2!')
-    def unitary_extension(Q):
-
-        def direct_sum(A, B):
-            '''direct sum of two matrices'''
-            (a1, a2), (b1, b2) = A.shape, B.shape
-            O = np.zeros((a2, b1))
-            return np.block([[A, O], [O.T, B]])
-
-        '''extend an isometry to a unitary (doesn't check its an isometry)'''
-        s = Q.shape
-        flipped=False
-        N1 = null_space(Q)
-        N2 = null_space(Q.conj().T)
-
-
-        if s[0]>s[1]:
-            Q_ = np.concatenate([Q, N2], 1)
-        elif s[0]<s[1]:
-            Q_ = np.concatenate([Q.conj().T, N1], 1).conj().T
-        else:
-            Q_ = Q
-        return Q_
-
 
     data = []
     for tensor in qtn.tensors:
