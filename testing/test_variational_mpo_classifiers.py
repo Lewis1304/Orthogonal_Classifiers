@@ -11,7 +11,6 @@ import quimb.tensor as qtn
 from quimb.tensor.optimize import TNOptimizer
 import math
 import pytest
-
 import sys
 
 sys.path.append("../")
@@ -649,6 +648,7 @@ def test_loss_functions():
         squeezed_truncated_bitstrings,
         y_train[:10],
     )
+
     overlap = anp.log(
         abs(
             squeezed_images[0].squeeze().H
@@ -871,5 +871,7 @@ def test_evaluate_classifier_top_k_accuracy():
 
 
 if __name__ == "__main__":
-    test_padded_classifier_predictions()
+    #test_padded_classifier_predictions()
     # test_create_mpo_classifier_from_initialised_classifier()
+    import autograd.numpy as anp
+    test_loss_functions()
