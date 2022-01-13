@@ -12,7 +12,6 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import idx2numpy as idn
-import autograd.numpy as anp
 
 import quimb.tensor as qtn
 from quimb.tensor.tensor_core import rand_uuid
@@ -193,7 +192,7 @@ def create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=None, full_sized=F
 
 
 def create_mpo_classifier_from_initialised_classifier(
-    initialised_classifier, seed=None
+    initialised_classifier, seed=420
 ):
 
     # Create MPO classifier
@@ -346,7 +345,7 @@ def classifier_predictions(mpo_classifier, mps_test, q_hairy_bitstrings):
             abs(test_image.squeeze().H @ (mpo_classifier @ b.squeeze()))
             for b in q_hairy_bitstrings
         ]
-        for test_image in mps_test
+        for test_image in tqdm(mps_test)
     ]
     return predictions
 
@@ -394,49 +393,6 @@ def evaluate_hard_ensemble_top_k_accuracy(e_predictions, y_test, k):
     top_k_ensemble_predictions = [[t[0] for t in Counter(i).most_common(k)] for i in top_k_ensemble_predictions]
     results = np.mean([int(i in j) for i, j in zip(y_test, top_k_ensemble_predictions)])
     return results
-
-
-def train_predictions(mps_images, labels, classifier, bitstrings):
-    import tensorflow as tf
-
-    #predictions = np.array(classifier_predictions(classifier, mps_images, bitstrings))
-    #predictions = np.load(f'all_predictions.npy').reshape(1000,-1)
-    #predictions = np.random.normal(0, 1, (1000,10))
-    mnist = tf.keras.datasets.mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
-
-    x_train = np.expand_dims(x_train, -1)[:1000]
-    y_train = y_train[:1000]
-
-    inputs = tf.keras.Input(shape=(28,28,1))
-    x = tf.keras.layers.AveragePooling2D(pool_size = (2,2))(inputs)
-    x = tf.keras.layers.Flatten()(x)
-    outputs = tf.keras.layers.Dense(10, activation = 'relu')(x)
-    model = tf.keras.Model(inputs=inputs, outputs=outputs)
-    model.summary()
-
-    model.compile(
-    optimizer=tf.keras.optimizers.Adam(0.001),
-    loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False),
-    metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
-    )
-
-    earlystopping = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=100)
-
-    history = model.fit(
-        x_train,
-        y_train,
-        epochs=100000,
-        batch_size = 32,
-        callbacks = [earlystopping]
-    )
-    accuracy = history.history['sparse_categorical_accuracy']
-    loss = history.history['loss']
-    np.save('benchmark', loss)
-    np.save('benchmark', accuracy)
-
-    plt.plot(accuracy)
-    plt.show()
 
 if __name__ == "__main__":
     pass

@@ -117,6 +117,42 @@ def prepare_batched_classifier(
 
     return MPOs[0]
 
+def prepare_sum_states(
+    mps_train, labels, D_total, batch_num, one_site=False
+):
+
+    possible_labels = list(set(labels))
+    n_hairy_sites = int(np.ceil(mlog(len(possible_labels), 4)))
+    n_sites = mps_train[0].num_tensors
+
+    #Bitstrings have to be non-truncated
+
+    hairy_bitstrings_data = create_hairy_bitstrings_data(
+        possible_labels, n_hairy_sites, n_sites, one_site
+    )
+    q_hairy_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, n_hairy_sites, n_sites, truncated=True
+    )
+    train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
+
+    # Converting qMPOs into fMPOs
+    MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
+
+    # Adding fMPOs together
+    while len(MPOs) > batch_num:
+        MPOs = adding_batches(MPOs, D_total, batch_num)
+
+    return MPOs
+
+def prepare_linear_classifier(mps_train, labels):
+    possible_labels = list(set(labels))
+    return [np.array(mps_train)[label == labels] for label in possible_labels]
+
+def linear_classifier_predictions(classifier, mps_test, labels):
+    possible_labels = list(set(labels))
+    return np.array([[np.sum([(i & image).squeeze().contract(all) for i in classifier[label]]) for label in possible_labels] for image in tqdm(mps_test)])
+
+
 """
 Ensemble classifiers
 """
@@ -198,34 +234,35 @@ def batch_initialise_classifier():
     predictions = classifier_predictions(qtn_classifier, mps_train, q_hairy_bitstrings)
     print(evaluate_classifier_top_k_accuracy(predictions, train_labels, 1))
 
+
+def unitary_extension(Q):
+
+    def direct_sum(A, B):
+        '''direct sum of two matrices'''
+        (a1, a2), (b1, b2) = A.shape, B.shape
+        O = np.zeros((a2, b1))
+        return np.block([[A, O], [O.T, B]])
+
+    '''extend an isometry to a unitary (doesn't check its an isometry)'''
+    s = Q.shape
+    flipped=False
+    N1 = null_space(Q)
+    N2 = null_space(Q.conj().T)
+
+
+    if s[0]>s[1]:
+        Q_ = np.concatenate([Q, N2], 1)
+    elif s[0]<s[1]:
+        Q_ = np.concatenate([Q.conj().T, N1], 1).conj().T
+    else:
+        Q_ = Q
+    return Q_
+
 def unitary_qtn(qtn):
     #Only works for powers of bond dimensions which are (due to reshaping of tensors)
     D_max = max([tensor.shape[-1] for tensor in qtn.tensors])
     if not mlog(D_max,2).is_integer():
         raise Exception('Classifier has to have bond order of power 2!')
-    def unitary_extension(Q):
-
-        def direct_sum(A, B):
-            '''direct sum of two matrices'''
-            (a1, a2), (b1, b2) = A.shape, B.shape
-            O = np.zeros((a2, b1))
-            return np.block([[A, O], [O.T, B]])
-
-        '''extend an isometry to a unitary (doesn't check its an isometry)'''
-        s = Q.shape
-        flipped=False
-        N1 = null_space(Q)
-        N2 = null_space(Q.conj().T)
-
-
-        if s[0]>s[1]:
-            Q_ = np.concatenate([Q, N2], 1)
-        elif s[0]<s[1]:
-            Q_ = np.concatenate([Q.conj().T, N1], 1).conj().T
-        else:
-            Q_ = Q
-        return Q_
-
 
     data = []
     for tensor in qtn.tensors:

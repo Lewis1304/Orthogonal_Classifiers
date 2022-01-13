@@ -40,25 +40,25 @@ def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False):
 
     if equal_numbers:
         n_train_per_class = n_train // len(list(set(y_train)))
-        n_test_per_class = n_test // len(list(set(y_train)))
+        #n_test_per_class = n_test // len(list(set(y_train)))
 
         grouped_x_train = [
             x_train[y_train == label][:n_train_per_class]
             for label in list(set(y_train))
         ]
-        grouped_x_test = [
-            x_test[y_test == label][:n_test_per_class] for label in list(set(y_test))
-        ]
+        #grouped_x_test = [
+        #    x_test[y_test == label][:n_test_per_class] for label in list(set(y_test))
+        #]
 
         train_data = np.array([images for images in zip(*grouped_x_train)])
         train_labels = [list(set(y_train)) for _ in train_data]
-        test_data = np.array([images for images in zip(*grouped_x_test)])
-        test_labels = [list(set(y_test)) for _ in range(len(test_data))]
+        #test_data = np.array([images for images in zip(*grouped_x_test)])
+        #test_labels = [list(set(y_test)) for _ in range(len(test_data))]
 
         x_train = np.array([item for sublist in train_data for item in sublist])
         y_train = np.array([item for sublist in train_labels for item in sublist])
-        x_test = np.array([item for sublist in test_data for item in sublist])
-        y_test = np.array([item for sublist in test_labels for item in sublist])
+        #x_test = np.array([item for sublist in test_data for item in sublist])
+        #y_test = np.array([item for sublist in test_labels for item in sublist])
 
     x_train, x_test = (x_train.reshape(len(x_train), -1) / 255)[:n_train], (
         x_test.reshape(len(x_test), -1) / 255
