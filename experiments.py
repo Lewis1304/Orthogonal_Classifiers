@@ -452,6 +452,32 @@ def d_batch_vs_acc():
 
     assert()
 
+def d_final_vs_acc(mps_images, labels, bitstrings):
+
+    #x_train, y_train, x_test, y_test = load_data(
+    #    100,10000, shuffle=False, equal_numbers=True
+    #)
+    #D_test = 32
+    #mps_test = mps_encoding(x_test, D_test)
+
+    initial_classifier = load_qtn_classifier('Big_Classifiers/non_ortho_mpo_classifier_32')
+    accuracies = []
+    for D_final in tqdm(range(2, 33)):
+        fmpo_classifier = fMPO([site.data for site in initial_classifier])
+        truncated_fmpo_classifier = fmpo_classifier.compress_one_site(D=D_final, orthogonalise=False)
+        qtn_classifier = data_to_QTN(truncated_fmpo_classifier)
+
+        #predictions = classifier_predictions(qtn_classifier.squeeze(), mps_test, bitstrings)
+
+        predictions = np.array([abs((qtn_classifier @ i).squeeze().data) for i in tqdm(mps_images)])
+        accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
+        accuracies.append(accuracy)
+        np.save('results/non_ortho_d_final_vs_training_acc', accuracies)
+
+
+
+
+
 def obtain_deterministic_accuracies(bitstrings):
     n_train_samples = 5329*10
     n_test_samples = 10000
@@ -506,14 +532,38 @@ def obtain_deterministic_accuracies(bitstrings):
         np.save('Classifiers/Big_Classifiers/ortho_test_accuracies_32_50', ortho_test_accuracies)
     assert()
 
-if __name__ == "__main__":
+def collect_variational_classifier_results(title, mps_test, y_test):
+    if title == 'cross_entropy_random':
+        x = range(0, 1000, 10)
+    elif title == 'abs_stoudenmire_loss_random':
+        x = range(89)
+    elif title == 'cross_entropy_loss_det_init_non_ortho':
+        x = range(0, 941, 10)
+    elif title == 'abs_stoudenmire_loss_det_init_non_ortho':
+        x = range(77)
 
+
+    accuracies = []
+    for i in tqdm(x[::-1]):
+        classifier = load_qtn_classifier(title + f'/mpo_classifier_epoch_{i}')#.squeeze()
+        fmpo_classifier = fMPO([site.data for site in classifier.tensors])
+        ortho_classifier = data_to_QTN((fmpo_classifier.compress_one_site(D = 32, orthogonalise = True)).data).squeeze()
+
+        predictions = np.array([abs((mps_image.H @ ortho_classifier).squeeze().data) for mps_image in tqdm(mps_test)])
+        accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_test, 1))
+        print(accuracies)
+        assert()
+    np.save('ortho_' + title + '_test_accuracies', accuracies)
+
+
+
+if __name__ == "__main__":
     #Biggest equal size is n_train = 5329 * 10 with batch_num = 73
     #Can use n_train = 4913 with batch_num = 17
-    #num_samples = 5329*10
-    #batch_num = 73
-    num_samples = 1000
-    batch_num = 10
+    num_samples = 5329*10
+    batch_num = 73
+    #num_samples = 1000
+    #batch_num = 10
     one_site = True
     one_site_adding = False
     ortho_at_end = True
@@ -534,36 +584,50 @@ if __name__ == "__main__":
                 arrangement='one class',
                 truncated=True,
                 one_site=one_site,
-                initialise_classifier=True,
+                initialise_classifier=False,
                 initialise_classifier_settings=(batch_num, one_site_adding, ortho_at_end),
             )
     mps_images, labels = data
     #classifier, sum_states = classifier
-    #predictions = classifier_predictions(classifier.squeeze(), mps_images, bitstrings)
-    #accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
-    #print('Initial Accuracy: ', accuracy)
-    #quantum_stacking_with_pennylane(mps_images, labels, classifier, bitstrings, 0)
-    #assert()
-    #ortho_classifier = load_qtn_classifier('Big_Classifiers/ortho_mpo_classifier_32')
-    #train_predictions(mps_images, labels, classifier.squeeze(), bitstrings)
+    d_final_vs_acc(mps_images, labels, bitstrings)
+    assert()
 
-    """
+
     x_train, y_train, x_test, y_test = load_data(
-        100,100, shuffle=False, equal_numbers=True
+        100,10000, shuffle=False, equal_numbers=True
     )
     D_test = 32
-    x_test = [x_test[label == y_test][0] for label in range(10)]
-    y_test = np.array(range(10))
+    #x_test = [x_test[label == y_test][0] for label in range(10)]
+    #y_test = np.array(range(10))
     mps_test = mps_encoding(x_test, D_test)
-    """
+
+    classifier = load_qtn_classifier('Big_Classifiers/non_ortho_mpo_classifier_32').squeeze()
+    test_preds = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_test)])
+    np.save('models/initial_test_predictions_non_ortho_mpo_classifier', test_preds)
+
+    test_accuracy = evaluate_classifier_top_k_accuracy(test_preds, y_test, 1)
+    print('Initial test accuracy: ', test_accuracy)
+
+    import tensorflow as tf
+    model = tf.keras.models.load_model('models/non_ortho_big_dataset_D_32')
+    trained_test_predictions = model.predict(test_preds)
+    np.save('models/trained_test_predictions_non_ortho_mpo_classifier', trained_test_predictions)
+
+    test_accuracy = evaluate_classifier_top_k_accuracy(trained_test_predictions, y_test, 1)
+    print('Trained test accuracy:', test_accuracy)
+    assert()
 
     #classical_stacking(mps_images, labels, classifier.squeeze(), bitstrings)
-    n_copies = 3
+    n_copies = 2
     v_col = True
-    U = efficent_deterministic_quantum_stacking(labels, bitstrings, n_copies, classifier, v_col=v_col)
+    #U_preds = efficent_deterministic_quantum_stacking(labels, bitstrings, n_copies, classifier, v_col=v_col)
+    #U = deterministic_quantum_stacking(labels, bitstrings, n_copies, classifier, v_col=v_col)
+    #U_param = parameterise_deterministic_U(U)
+    #quantum_stacking_with_pennylane(0, U_preds = None)#, U_param)
+    assert()
+    state_preparation_pennylane(U)
     #U = deterministic_quantum_stacking(labels, bitstrings, n_copies, classifier, v_col=v_col)
     assert()
-    U_param = parameterise_deterministic_U(U)
     #assert()
 
     quantum_stacking_with_copy_qubits(classifier, bitstrings, mps_images, labels, 1, U_param)

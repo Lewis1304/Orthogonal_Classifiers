@@ -2,3 +2,6 @@ git_password.txt
 __pycache__/
 testing/__pycache__/
 Classifiers/
+results/
+models/
+logs/
