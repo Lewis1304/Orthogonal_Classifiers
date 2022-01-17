@@ -208,8 +208,9 @@ def batch_initialise_classifier():
     train_data, train_labels = arrange_data(x_train, y_train, arrangement="one class")
 
     # Add images together- forming classifier initialisation
+    mps_train = mps_encoding(train_data, D_total)
     fMPO_classifier = prepare_batched_classifier(
-        train_data, train_labels, D_total, batch_num, one_site=one_site
+        mps_train, train_labels, D_total, batch_num, one_site=one_site
     )
     qtn_classifier = data_to_QTN(fMPO_classifier.data).squeeze()
     qtn_classifier_data = fMPO_classifier.compress_one_site(
@@ -286,6 +287,7 @@ def unitary_qtn(qtn):
     return uclassifier
 
 if __name__ == "__main__":
+    batch_initialise_classifier()
     pass
     # sequential_mpo_classifier_experiment()
     #batch_initialise_classifier()
