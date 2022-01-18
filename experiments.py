@@ -4,6 +4,7 @@ from stacking import *
 #prepare_batched_classifier, prepare_ensemble, unitary_qtn, prepare_sum_states, adding_batches, prepare_linear_classifier, linear_classifier_predictions
 import os
 from tqdm import tqdm
+from xmps.svd_robust import svd
 
 """
 Prepare Experiment
@@ -14,30 +15,22 @@ def initialise_experiment(
     n_samples,
     D,
     arrangement="one class",
-    truncated=False,
-    one_site=False,
     initialise_classifier=False,
-    initialise_classifier_settings=(10, False, False),
+    initialise_classifier_settings=(10, False),
     prep_sum_states = False
 ):
     """
     int: n_samples: Number of data samples (total)
     int: D_total: Bond dimension of classifier and data
     string: arrangement: Order of training images- this matters for batch added initialisation
-    bool: truncated: Whether sites with upwards indices projected onto |0> are sliced. Speeds up training.
-    bool: one_site: Whether classifier/images have one site with label legs or more.
     bool: initialise_classifier: Whether classifier is initialised using batch adding procedure
     tuple: initialise_classifier_settings: (
                                             batch_num: how many images per batch,
-                                            one_site_adding: images encoded and compressed as one site or not,
                                             ortho_at_end: Whether polar decomp is performed at the end or not
                                             )
     """
     D_encode, D_batch, D_final = D
 
-    #print(f'D_encode: {D_encode}')
-    #print(f'D_batch: {D_batch}')
-    #print(f'D_final: {D_final}')
     # Load & Organise Data
     x_train, y_train, x_test, y_test = load_data(
         n_samples, shuffle=False, equal_numbers=True
@@ -49,37 +42,37 @@ def initialise_experiment(
 
     # All possible class labels
     possible_labels = list(set(y_train))
-    # Number of "label" sites
-    n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
+
     # Number of total sites (mps encoding)
     n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
 
     # Create hairy bitstrings
     hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairysites, n_sites, one_site
+        possible_labels, n_sites
     )
     q_hairy_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, n_hairysites, n_sites, truncated=truncated
+        hairy_bitstrings_data, n_sites
     )
     # MPS encode data
     mps_train = mps_encoding(x_train, D_encode)
 
     #print('Encoded Data!')
 
-
     # Initial Classifier
     if initialise_classifier:
 
-        batch_num, one_site_adding, ortho_at_end = initialise_classifier_settings
+        batch_num, ortho_at_end = initialise_classifier_settings
 
         if prep_sum_states:
 
-            sum_states = prepare_sum_states(mps_train, y_train, D_batch, batch_num, one_site=one_site_adding)
+            sum_states = prepare_batched_classifier(
+                mps_train, y_train, D_batch, batch_num, prep_sum_states
+            )
+
             mpo_classifier = sum_states
 
             sum_states = [data_to_QTN(s.compress_one_site(D=D_batch, orthogonalise = ortho_at_end).data).reindex({'s9':'t9'}) for s in sum_states]
-            #classifier_data = adding_batches(sum_states, D_batch, 10)[0]
-            #mpo_classifier = classifier_data
+
             classifier_data = adding_batches(mpo_classifier, D_final, 10)[0].compress_one_site(
                 D=D_final, orthogonalise=ortho_at_end
             )
@@ -87,44 +80,22 @@ def initialise_experiment(
 
             return (mps_train, y_train), (mpo_classifier, sum_states), q_hairy_bitstrings
 
-
-        #elif not math.log(len(x_train), batch_num).is_integer():
-
-        #    sum_states = prepare_sum_states(mps_train, y_train, D_batch, batch_num, one_site=one_site_adding)
-        #    mpo_classifier = sum_states
-
-        #    sum_states = [data_to_QTN(s.compress_one_site(D=D_batch, orthogonalise = ortho_at_end).data).reindex({'s9':'t9'}) for s in sum_states]
-            #classifier_data = adding_batches(sum_states, D_batch, 10)[0]
-            #mpo_classifier = classifier_data
-        #    classifier_data = adding_batches(mpo_classifier, D_final, 10)[0].compress_one_site(
-        #        D=D_final, orthogonalise=ortho_at_end
-        #    )
-        #    mpo_classifier = data_to_QTN(classifier_data.data)
-
-        #    return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
-
         else:
 
             fmpo_classifier = prepare_batched_classifier(
-                mps_train, y_train, D_batch, batch_num, one_site=one_site_adding
+                mps_train, y_train, D_batch, batch_num
             )
 
-            if one_site:
-                # Works for n_sites != 1. End result is a classifier with n_site = 1.
-                classifier_data = fmpo_classifier.compress_one_site(
-                    D=D_final, orthogonalise=ortho_at_end
-                )
-                mpo_classifier = data_to_QTN(classifier_data.data)#.squeeze()
-            else:
-                classifier_data = fmpo_classifier.compress(
-                    D=D_final, orthogonalise=ortho_at_end
-                )
-                mpo_classifier = data_to_QTN(classifier_data.data)#.squeeze()
+            classifier_data = fmpo_classifier.compress_one_site(
+                D=D_final, orthogonalise=ortho_at_end
+            )
+            mpo_classifier = data_to_QTN(classifier_data.data)#.squeeze()
+
     else:
         # MPO encode data (already encoded as mps)
         # Has shape: # classes, mpo.shape
         old_classifier_data = prepare_batched_classifier(
-            mps_train[:10], list(range(10)), 32, 10, one_site=False
+            mps_train[:10], list(range(10)), 32, 10
         ).compress_one_site(D=32, orthogonalise=False)
         old_classifier = data_to_QTN(old_classifier_data.data)#.squeeze()
         mpo_classifier = create_mpo_classifier_from_initialised_classifier(old_classifier).squeeze()
@@ -152,14 +123,6 @@ def all_classes_experiment(
     classifier_opt = mpo_classifier
     #classifier_opt = pad_qtn_classifier(mpo_classifier)
     # classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
-    """
-    initial_predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
-
-    predicitions_store = [initial_predictions]
-    accuracies = [evaluate_classifier_top_k_accuracy(initial_predictions, y_train, 1)]
-    # variances = [evaluate_prediction_variance(initial_predictions)]
-    losses = [loss_func(classifier_opt, mps_train, q_hairy_bitstrings, y_train)]
-    """
 
     def optimiser(classifier):
         optmzr = TNOptimizer(
@@ -474,10 +437,6 @@ def d_final_vs_acc(mps_images, labels, bitstrings):
         accuracies.append(accuracy)
         np.save('results/non_ortho_d_final_vs_training_acc', accuracies)
 
-
-
-
-
 def obtain_deterministic_accuracies(bitstrings):
     n_train_samples = 5329*10
     n_test_samples = 10000
@@ -555,18 +514,150 @@ def collect_variational_classifier_results(title, mps_test, y_test):
         assert()
     np.save('ortho_' + title + '_test_accuracies', accuracies)
 
+def mps_image_singular_values():
+    from xmps.fMPS import fMPS
+    from functools import reduce
+
+    def get_singular_values(qtn):
+        L = qtn.num_tensors
+        middle_site = qtn.tensors[L//2 -1]
+
+        site_data = middle_site.data.squeeze()
+        d, i, j = site_data.shape
+        reshaped_data = site_data.reshape(d*i, j)
+
+        U, S, Vd = svd(reshaped_data)
+        return S
+
+    def get_singular_values_fmps(ftn):
+        L = ftn.L
+        middle_site = ftn.data[L//2 -1]
+
+        site_data = middle_site
+        d, i, j = site_data.shape
+        reshaped_data = site_data.reshape(d*i, j)
+
+        U, S, Vd = svd(reshaped_data)
+        return S
+
+    def get_sum_states(mps_images, labels):
+
+        def add_mpss(a, b):
+            return a.add(b)
+
+        mps_images_data = [[site.data for site in i.tensors] for i in mps_images]
+        fMPSs = [fMPS(i) for i in mps_images_data]
+
+        #shape: num_classes, num_digit_in_class
+        sorted_fMPSs = [[fMPSs[i] for i in range(len(fMPSs)) if labels[i] == l] for l in list(set(labels))]
+
+        added_mpss = [reduce(add_mpss, digits) for digits in sorted_fMPSs]
+
+        return [i.left_canonicalise(D = 32) for i in added_mpss]
+
+    def get_batched_sum_states(mps_images, labels, batch_num, D):
+
+        def adding_mps_batches(list_to_add, D, batch_num, truncate=True):
+            # if batches are not of equal size, the remainder is added
+            # at the end- this is a MAJOR problem with equal weightings!
+
+            if len(list_to_add) % batch_num != 0:
+                if not truncate:
+                    raise Exception("Batches are not of equal size!")
+                else:
+                    trun_expo = int(np.log(len(list_to_add)) / np.log(batch_num))
+                    list_to_add = list_to_add[: batch_num ** trun_expo]
+            result = []
+
+            for i in range(int(len(list_to_add) / batch_num) + 1):
+                sub_list = list_to_add[batch_num * i : batch_num * (i + 1)]
+                if len(sub_list) > 0:
+                    result.append(reduce(add_mps_sublist, (D, sub_list)))
+            return result
+
+        def add_mps_sublist(*args):
+            """
+            :param args: tuple of B_D and MPOs to be added together
+            """
+
+            B_D = args[0]
+            sub_list_mpos = args[1]
+            N = len(sub_list_mpos)
+
+            c = sub_list_mpos[0]
+
+            for i in range(1, N):
+                c = c.add(sub_list_mpos[i])
+            return c.left_canonicalise(B_D)
+
+        mps_images_data = [[site.data for site in i.tensors] for i in mps_images]
+        fMPSs = [fMPS(i) for i in mps_images_data]
+
+        #shape: num_classes, num_digit_in_class
+        sorted_fMPSs = [[fMPSs[i] for i in range(len(fMPSs)) if labels[i] == l] for l in list(set(labels))]
+
+        flat_fMPSs = [item for sublist in sorted_fMPSs for item in sublist]
+
+        while len(flat_fMPSs) > 10:
+            flat_fMPSs = adding_mps_batches(flat_fMPSs, D, batch_num)
+
+        return flat_fMPSs
+
+    def evalulate_sum_states(sum_states, test_data, test_labels):
+        sum_states = [s for s in sum_states]
+        test_fmps = [fMPS([site.data for site in qtn_image.tensors]) for qtn_image in test_data]
+        predictions = [[abs(state.overlap(test)) for state in sum_states] for test in tqdm(test_fmps)]
+        print(test_labels)
+        print(predictions[:10])
+        #assert()
+
+
+
+        print(evaluate_classifier_top_k_accuracy(predictions, test_labels, 1))
+        assert()
+
+    num_samples = 1000#5329*10
+    D = 32
+    batch_num = 10#73
+
+    x_train, y_train, x_test, y_test = load_data(
+        num_samples, shuffle=False, equal_numbers=True
+    )
+
+    mps_images = mps_encoding(x_train, D)
+    labels = y_train
+
+    #sum_states = get_sum_states(mps_images, labels)
+    batched_sum_states = get_batched_sum_states(mps_images, labels, batch_num, D)
+
+
+    evalulate_sum_states(batched_sum_states, mps_images, labels)
+    assert()
+
+
+    image_singular_values = [np.mean([get_singular_values(qtn) for qtn in np.array(mps_images)[labels == l]], axis = 0) for l in list(set(labels))]
+    sum_states_singular_values = [get_singular_values_fmps(ss) for ss in sum_states]
+    batched_sum_states_singular_values = [get_singular_values_fmps(ss) for ss in batched_sum_states]
+
+    np.save('mean_img_singular_vals', np.mean(image_singular_values, axis = 0))
+    np.save('mean_sum_state_singular_vals', np.mean(sum_states_singular_values, axis = 0))
+    np.save('mean_batched_sum_state_singular_vals', np.mean(batched_sum_states_singular_values, axis = 0))
+
+    assert()
+
+
 
 
 if __name__ == "__main__":
+
+    #mps_image_singular_values()
     #Biggest equal size is n_train = 5329 * 10 with batch_num = 73
     #Can use n_train = 4913 with batch_num = 17
-    num_samples = 5329*10
-    batch_num = 73
-    #num_samples = 1000
-    #batch_num = 10
-    one_site = True
-    one_site_adding = False
-    ortho_at_end = True
+    #num_samples = 5329*10
+    #batch_num = 73
+    num_samples = 1000
+    batch_num = 10
+    ortho_at_end = False
     #prep_sum_states = False
 
     D_total = 32
@@ -582,13 +673,17 @@ if __name__ == "__main__":
                 num_samples,
                 D,
                 arrangement='one class',
-                truncated=True,
-                one_site=one_site,
-                initialise_classifier=False,
-                initialise_classifier_settings=(batch_num, one_site_adding, ortho_at_end),
+                initialise_classifier=True,
+                prep_sum_states = True,
+                initialise_classifier_settings=(batch_num, ortho_at_end),
             )
     mps_images, labels = data
-    #classifier, sum_states = classifier
+    classifier, sum_states = classifier
+
+    predictions = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_images)])
+    print(evaluate_classifier_top_k_accuracy(predictions, labels, 1))
+
+    assert()
     d_final_vs_acc(mps_images, labels, bitstrings)
     assert()
 

@@ -61,6 +61,7 @@ def add_sublist(*args):
 
     for i in range(1, N):
         c = c.add(sub_list_mpos[i])
+
     if c.data[-2].shape[1] == 1:
         return c.compress_one_site(B_D, orthogonalise=ortho)
     return c.compress(B_D, orthogonalise=ortho)
@@ -91,20 +92,19 @@ Prepare classifier
 
 
 def prepare_batched_classifier(
-    mps_train, labels, D_total, batch_num, one_site=False
+    mps_train, labels, D_total, batch_num, prep_sum_states = False
 ):
 
     possible_labels = list(set(labels))
-    n_hairy_sites = int(np.ceil(mlog(len(possible_labels), 4)))
     n_sites = mps_train[0].num_tensors
 
     #Bitstrings have to be non-truncated
 
     hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairy_sites, n_sites, one_site
+        possible_labels, n_sites
     )
     q_hairy_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, n_hairy_sites, n_sites, truncated=True
+        hairy_bitstrings_data, n_sites, truncated=True
     )
     train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
 
@@ -112,13 +112,19 @@ def prepare_batched_classifier(
     MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
 
     # Adding fMPOs together
-    while len(MPOs) > 1:
-        MPOs = adding_batches(MPOs, D_total, batch_num)
+    if prep_sum_states:
+        while len(MPOs) > 10:
+            MPOs = adding_batches(MPOs, D_total, batch_num)
+        return MPOs
 
-    return MPOs[0]
+    else:
+        while len(MPOs) > 1:
+            MPOs = adding_batches(MPOs, D_total, batch_num)
+        return MPOs[0]
+
 
 def prepare_sum_states(
-    mps_train, labels, D_total, batch_num, one_site=False
+    mps_train, labels, D_total, batch_num
 ):
 
     possible_labels = list(set(labels))
@@ -128,7 +134,7 @@ def prepare_sum_states(
     #Bitstrings have to be non-truncated
 
     hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairy_sites, n_sites, one_site
+        possible_labels, n_sites
     )
     q_hairy_bitstrings = bitstring_data_to_QTN(
         hairy_bitstrings_data, n_hairy_sites, n_sites, truncated=True
