@@ -34,27 +34,26 @@ D_total = 10
 x_train, y_train, x_test, y_test = load_data(n_train, n_test)
 
 possible_labels = list(set(y_train))
-n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
 n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
 n_pixels = len(x_train[0])
 
 hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites
+    possible_labels, n_sites
 )
 
 one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, one_site=True
+    possible_labels, n_sites
 )
 
 
 quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
+    hairy_bitstrings_data_untruncated_data, n_sites, truncated=False
 )
 truncated_quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
+    hairy_bitstrings_data_untruncated_data, n_sites, truncated=True
 )
 truncated_one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
+    one_site_bitstrings_data_untruncated_data, n_sites, truncated=True
 )
 
 
@@ -78,14 +77,6 @@ predictions = np.array(
 
 def test_create_hairy_bitstrings_data():
 
-    # Test correct shape: #classes, #sites, dim(s)
-    dim_s = 4
-    assert hairy_bitstrings_data_untruncated_data.shape == (
-        len(possible_labels),
-        n_sites,
-        dim_s,
-    )
-
     # Test one_site
     dim_s = 16
     assert one_site_bitstrings_data_untruncated_data.shape == (
@@ -98,9 +89,9 @@ def test_create_hairy_bitstrings_data():
     # Check for all classes
     for label in possible_labels:
         for site in hairy_bitstrings_data_untruncated_data[label][
-            : (n_sites - n_hairysites)
+            : (n_sites - 1)
         ]:
-            assert np.array_equal(site, [1, 0, 0, 0])
+            assert np.array_equal(site, [1] + [0]*(dim_s - 1))
 
     # Test one_site
     for label in possible_labels:
@@ -112,7 +103,7 @@ def test_create_padded_bitstrings_data():
     mps_train = mps_encoding(x_train, 32)
 
     fmpo_classifier = prepare_batched_classifier(
-            mps_train, y_train, 32, 10, one_site=False
+            mps_train, y_train, 32, 10
         ).compress_one_site(D = None, orthogonalise = True)
     qtn_classifier = data_to_QTN(fmpo_classifier.data)
 
@@ -154,7 +145,7 @@ def test_bitstring_to_product_state_data():
     for label in possible_labels:
         for site in product_states[label]:
             assert site.shape == (
-                4,
+                16,
                 1,
                 1,
             )
@@ -797,7 +788,7 @@ def test_padded_classifier_predictions():
     mps_train = mps_encoding(x_train, 32)
 
     fmpo_classifier = prepare_batched_classifier(
-            mps_train, y_train, 32, 10, one_site=False
+            mps_train, y_train, 32, 10
         ).compress_one_site(D = None, orthogonalise = True)
     qtn_classifier = data_to_QTN(fmpo_classifier.data)
 
@@ -873,5 +864,4 @@ def test_evaluate_classifier_top_k_accuracy():
 if __name__ == "__main__":
     #test_padded_classifier_predictions()
     # test_create_mpo_classifier_from_initialised_classifier()
-    import autograd.numpy as anp
     test_loss_functions()

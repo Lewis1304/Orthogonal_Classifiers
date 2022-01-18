@@ -35,28 +35,27 @@ D_total = 10
 x_train, y_train, x_test, y_test = load_data(n_train, n_test, equal_numbers=True)
 
 possible_labels = list(set(y_train))
-n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
 n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
 n_pixels = len(x_train[0])
 
 hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites
+    possible_labels, n_sites
 )
 one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
-    possible_labels, n_hairysites, n_sites, one_site=True
+    possible_labels, n_sites
 )
 
 quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
+    hairy_bitstrings_data_untruncated_data, n_sites, truncated=False
 )
 truncated_quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    hairy_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
+    hairy_bitstrings_data_untruncated_data, n_sites, truncated=True
 )
 one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=False
+    one_site_bitstrings_data_untruncated_data, n_sites, truncated=False
 )
 truncated_one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
-    one_site_bitstrings_data_untruncated_data, n_hairysites, n_sites, truncated=True
+    one_site_bitstrings_data_untruncated_data, n_sites, truncated=True
 )
 
 
@@ -147,7 +146,7 @@ def test_arrange_data():
 
 def test_bitstrings():
     # Test for n_hairysites != 1
-    bitstrings = create_bitstrings(possible_labels, n_hairysites)
+    bitstrings = create_bitstrings(possible_labels)
 
     from_bitstring_to_numbers = [
         sum([int(b) * 2 ** k for k, b in enumerate(bitstrings[i][::-1])])
@@ -194,36 +193,6 @@ def test_bitstring_data_to_QTN():
             else:
                 assert np.isclose((a @ b).norm(), 0)
 
-    # Check if label encoding is correct.
-    # Each hairy site has 2 qubits i.e. dim(s) == 2**2.
-    # Basis vectors for s.shape=4 site is:
-    # [1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1] with
-    # |00>, |01>, |10>, |11> respectively.
-    # So label "3" = "0011" should have [1,0,0,0] and [0,0,0,1] for the hairy sites
-    basis_vectors = {
-        "00": [1, 0, 0, 0],
-        "01": [0, 1, 0, 0],
-        "10": [0, 0, 1, 0],
-        "11": [0, 0, 0, 1],
-    }
-    bitstrings = create_bitstrings(possible_labels, n_hairysites)
-
-    # untruncated
-    for label in possible_labels:
-        for i, site in enumerate(
-            quimb_hairy_bitstrings[label].tensors[(n_sites - n_hairysites) :]
-        ):
-            site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
-            assert np.array_equal(site.data.squeeze(), basis_vectors[site_qubits_state])
-
-    # truncated
-    for label in possible_labels:
-        for i, site in enumerate(
-            truncated_quimb_hairy_bitstrings[label].tensors[(n_sites - n_hairysites) :]
-        ):
-            site_qubits_state = bitstrings[label][2 * i : 2 * (i + 1)]
-            assert np.array_equal(site.data.squeeze(), basis_vectors[site_qubits_state])
-
     # one-site
     for i, label in enumerate(possible_labels):
         site = one_site_quimb_hairy_bitstrings[label].tensors[-1]
@@ -234,7 +203,7 @@ def test_bitstring_data_to_QTN():
     # Test that projection is not null. i.e. equal to 0
     for label in possible_labels:
         for i, site in enumerate(truncated_quimb_hairy_bitstrings[label]):
-            if i < (n_sites - n_hairysites):
+            if i < (n_sites - 1):
                 assert site.data == np.array([1])
 
     # Check for one-site
@@ -247,7 +216,7 @@ def test_padded_bitstring_data_to_QTN():
     mps_train = mps_encoding(x_train, 32)
 
     fmpo_classifier = prepare_batched_classifier(
-            mps_train, y_train, 32, 10, one_site=False
+            mps_train, y_train, 32, 10
         ).compress_one_site(D = None, orthogonalise = True)
     qtn_classifier = data_to_QTN(fmpo_classifier.data)
 
@@ -483,4 +452,4 @@ def test_pad_qtn_classifier():
 if __name__ == "__main__":
     # test_bitstring_data_to_QTN()
     # test_save_and_load_qtn_classifier()
-    test_padded_bitstring_data_to_QTN()
+    test_bitstring_data_to_QTN()

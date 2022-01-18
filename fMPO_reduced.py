@@ -237,7 +237,7 @@ class fMPO:
         # print([i.shape for i in test2])
         return self
 
-    def compress_one_site(self, D=None, orthogonalise=False, sweep_back = False):
+    def compress_one_site(self, D=None, orthogonalise=False, sweep_back = True):
         """compress: compress internal bonds of fMPO with one hairy site,
         potentially with a orthogonalisation
 
@@ -303,55 +303,49 @@ class fMPO:
             # sort out canonicalisation
 
             if m + 1 < len(self.data):
-                A, S, V = split(self[m])
-                self[m], S, V = truncate_MPO(A, S, V, D)
+                A, S, V = split(self.data[m])
+                self.data[m], S, V = truncate_MPO(A, S, V, D)
                 """
                 ncon: Contract S@V j leg with self[m+1] i leg.
                 transpose: take (d_1,s_1,i_1,d_2,s_2,j_2) to (d_1,d_2,s_1,s_2,i_1,j_2)
                 reshape: group together d and s legs such that .shape = (d_1d_2,s_1s_2,i_1,j_2)
                 """
                 d_1, s_1, i_1, j_1 = (S @ V).shape
-                d_2, s_2, i_2, j_2 = self[m + 1].shape
+                d_2, s_2, i_2, j_2 = self.data[m + 1].shape
 
-                self[m + 1] = (
-                    ncon((S @ V, self[m + 1]), [[-1, -2, -3, 4], [-4, -5, 4, -6]])
+                self.data[m + 1] = (
+                    ncon((S @ V, self.data[m + 1]), [[-1, -2, -3, 4], [-4, -5, 4, -6]])
                     .transpose(0, 3, 1, 4, 2, 5)
                     .reshape(d_1 * d_2, s_1 * s_2, i_1, j_2)
                 )
             else:
-                d, s, i, j = self[m].shape
-
                 if orthogonalise:
-                    self[m] = (
+                    d, s, i, j = self.data[m].shape
+                    self.data[m] = (
                         polar(self[m].transpose(0, 2, 1, 3).reshape(d * i, s * j))[0]
                         .reshape(d, i, s, j)
                         .transpose(0, 2, 1, 3)
                     )
 
-        for m in range(len(self.data))[::-1]:
-            if sweep_back:
+        #Sweep back normalises the operator. This is IMPORTANT otherwise batches
+        #Will have different weightings. Current implementation reshapes both physical
+        #Legs together which is hard to implement on a quantum circuit...
+        if sweep_back:
+            for m in range(len(self.data))[::-1]:
                 A, S, V = split_back(self[m])
                 U, S, self[m] = truncate_MPO(A, S, V, D)
 
                 if m > 0:
-                    d_1, s_1, i_1, j_1 = self[m - 1].shape
+                    d_1, s_1, i_1, j_1 = self.data[m - 1].shape
                     d_2, s_2, i_2, j_2 = (U @ S).shape
                     # print('self[m-1]: ', self[m-1].shape)
                     # print('U@S: ', (U @ S).shape)
-                    self[m - 1] = (
-                        ncon((self[m - 1], U @ S), [[-1, -2, -3, 4], [-5, -6, 4, -7]])
+                    self.data[m - 1] = (
+                        ncon((self.data[m - 1], U @ S), [[-1, -2, -3, 4], [-5, -6, 4, -7]])
                         .transpose(0, 3, 1, 4, 2, 5)
                         .reshape(d_1 * d_2, s_1 * s_2, i_1, j_2)
                     )
-            else:
-                pass
-                """
-                if m == len(self.data) - 1:
-                    d, s, i, j = self[m].shape
-                    norm = ncon((self[-1].conj(), self[-1]), [[1,2,3,4],[1,2,3,4]])
-                    self[m] /= norm**0.5
-                """
-        return self
+        return fMPO(self.data)
 
     def add(self, other):
         """add: proper mpo addition here"""

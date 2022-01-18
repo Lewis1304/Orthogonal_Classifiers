@@ -132,7 +132,7 @@ Bitstring tools
 """
 
 
-def create_bitstrings(possible_labels, n_hairysites):
+def create_bitstrings(possible_labels, n_hairysites = 1):
     return [bin(label)[2:].zfill(n_hairysites * 2) for label in possible_labels]
 
 
@@ -140,7 +140,7 @@ def bitstring_to_product_state_data(bitstring_data):
     return fMPS().from_product_state(bitstring_data).data
 
 
-def bitstring_data_to_QTN(data, n_hairysites, n_sites, truncated=False):
+def bitstring_data_to_QTN(data, n_sites, truncated=False):
     # Doesn't work for truncated_data
     prod_state_data = bitstring_to_product_state_data(data)
     if truncated:
