@@ -48,7 +48,6 @@ def create_hairy_bitstrings_data(
         ]
     )
     untruncated = np.append(other_sites, hairy_sites, axis=1)
-
     return untruncated
 
 

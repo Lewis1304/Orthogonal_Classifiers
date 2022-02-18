@@ -17,8 +17,8 @@ from pennylane.templates.layers import StronglyEntanglingLayers
 
 from tqdm import tqdm
 
-def classical_stacking(mps_images, labels, classifier, bitstrings):
-
+def classical_stacking():
+    """
     #Ancillae start in state |00...>
     #n=0
     #ancillae_qubits = np.eye(2**n)[0]
@@ -29,11 +29,12 @@ def classical_stacking(mps_images, labels, classifier, bitstrings):
     #Create predictions
     training_predictions = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in mps_images])
     np.save('ortho_big_training_predictions_D_32',training_predictions)
-
     training_predictions = np.load('ortho_big_training_predictions_D_32.npy')
     labels = np.load('big_labels.npy')
     training_acc = evaluate_classifier_top_k_accuracy(training_predictions, labels, 1)
     print('Training Accuracy:', training_acc)
+    """
+
     """
     x_train, y_train, x_test, y_test = load_data(
         100,10000, shuffle=False, equal_numbers=True
@@ -52,6 +53,10 @@ def classical_stacking(mps_images, labels, classifier, bitstrings):
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.summary()
     """
+    training_predictions = np.load('Classifiers/fashion_mnist/initial_training_predictions_ortho_mpo_classifier.npy')
+    y_train = np.load('Classifiers/fashion_mnist/big_dataset_training_labels.npy')
+
+
     inputs = tf.keras.Input(shape=(training_predictions.shape[1],))
     #inputs = tf.keras.Input(shape=(qtn_prediction_and_ancillae_qubits.shape[1],))
     outputs = tf.keras.layers.Dense(10, activation = 'sigmoid')(inputs)
@@ -69,19 +74,20 @@ def classical_stacking(mps_images, labels, classifier, bitstrings):
 
     history = model.fit(
         training_predictions,
-        labels,
-        epochs=10000,
+        y_train,
+        epochs=2000,
         batch_size = 32,
         verbose = 1
     )
-    model.save('models/ortho_big_dataset_D_32')
-
-    #trained_training_predictions = model.predict(training_predictions)
+    #model.save('models/ortho_big_dataset_D_32')
+    test_preds = np.load('Classifiers/fashion_mnist/initial_test_predictions_ortho_mpo_classifier.npy')
+    y_test = np.load('Classifiers/fashion_mnist/big_dataset_test_labels.npy')
+    trained_test_predictions = model.predict(test_preds)
     #np.save('final_label_qubit_states_4',trained_training_predictions)
 
     #np.save('trained_predicitions_1000_classifier_32_1000_train_images', trained_training_predictions)
-    #accuracy = evaluate_classifier_top_k_accuracy(trained_training_predictions, labels, 1)
-    #print(accuracy)
+    accuracy = evaluate_classifier_top_k_accuracy(trained_test_predictions, y_test, 1)
+    print(accuracy)
 
 def quantum_stacking_with_ancillae(classifier, bitstrings, mps_images, labels, loss_func, loss_name):
     import quimb as qu
@@ -1281,9 +1287,11 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
     from numpy import linalg as LA
     #Shape: n_train,2**label_qubits
     #initial_label_qubits = np.array(np.load('results/stacking/initial_label_qubit_states_4.npy'), dtype = np.float64)
-    initial_label_qubits = np.load('models/initial_training_predictions_ortho_mpo_classifier.npy')
+    #initial_label_qubits = np.load('models/initial_training_predictions_ortho_mpo_classifier.npy')
+    initial_label_qubits = np.load('Classifiers/fashion_mnist/initial_training_predictions_ortho_mpo_classifier.npy')
 
-    y_train = np.load('models/big_dataset_train_labels.npy')
+    #y_train = np.load('models/big_dataset_train_labels.npy')
+    y_train = np.load('Classifiers/fashion_mnist/big_dataset_training_labels.npy')
     possible_labels = list(set(y_train))
 
 
@@ -1336,6 +1344,7 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
     #np.save('V', V)
     print('Performing Polar Decomposition!')
     U = polar(V)[0]
+    """
     print('Performing Contractions!')
     #np.save('U', U)
 
@@ -1356,8 +1365,10 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
     print('Training accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_train, 1))
     print('Training accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_train, 1))
     """
-    initial_label_qubits = np.load('models/initial_test_predictions_ortho_mpo_classifier.npy')
-    variational_label_qubits = np.load('models/trained_test_predictions_ortho_mpo_classifier.npy')
+
+    #initial_label_qubits = np.load('models/initial_test_predictions_ortho_mpo_classifier.npy')
+    initial_label_qubits = np.load('Classifiers/fashion_mnist/initial_test_predictions_ortho_mpo_classifier.npy')
+    #variational_label_qubits = np.load('models/trained_test_predictions_ortho_mpo_classifier.npy')
     outer_ket_states = initial_label_qubits
     #.shape = n_train, dim_l**n_copies+1
     for k in range(n_copies):
@@ -1372,13 +1383,15 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
         preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
         #preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
 
-    y_test = np.load('models/big_dataset_test_labels.npy')
+    y_test = np.load('Classifiers/fashion_mnist/big_dataset_test_labels.npy')
+    #y_test = np.load('models/big_dataset_test_labels.npy')
     print()
     print('Test accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_test, 1))
     print('Test accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_test, 1))
     print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
     print()
-    """
+
+
 def paralell_deterministic_quantum_stacking(n_copies, v_col = False):
     """
     Code in order to get 3 copies datapoint on rosalind machine.
@@ -1515,8 +1528,6 @@ def paralell_deterministic_quantum_stacking(n_copies, v_col = False):
     print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
     """
 
-
-
 def delta_paralell_deterministic_quantum_stacking(n_copies, v_col = False):
     """
     Code in order to get 3 copies datapoint on rosalind machine.
@@ -1616,8 +1627,6 @@ def delta_paralell_deterministic_quantum_stacking(n_copies, v_col = False):
     print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
     """
 
-
-
 def fixed_delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
     from numpy import linalg as LA
     #Shape: n_train,2**label_qubits
@@ -1702,5 +1711,6 @@ def fixed_delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False)
 
 
 if __name__ == '__main__':
-    print('256 SINGULAR VALUES')
+    classical_stacking()
+    assert()
     delta_efficent_deterministic_quantum_stacking(2, True)

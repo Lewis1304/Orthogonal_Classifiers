@@ -194,11 +194,31 @@ def plot_padding_results():
     assert ()
 
 def acc_vs_d_total_figure():
-    non_ortho_training_accuracies = np.load('Classifiers/Big_Classifiers/non_ortho_training_accuracies.npy')
-    ortho_training_accuracies = np.load('Classifiers/Big_Classifiers/ortho_training_accuracies.npy')
-    non_ortho_test_accuracies = np.load('Classifiers/Big_Classifiers/non_ortho_test_accuracies.npy')
-    ortho_test_accuracies = np.load('Classifiers/Big_Classifiers/ortho_test_accuracies.npy')
 
+    non_ortho_training_accuracies = np.load('Classifiers/mnist_sum_states/sum_state_non_ortho_d_final_vs_training_accuracy.npy')[::-1]
+    ortho_training_accuracies = np.load('Classifiers/mnist_sum_states/sum_state_ortho_d_final_vs_training_accuracy.npy')[::-1]
+    non_ortho_test_accuracies = np.load('Classifiers/mnist_sum_states/sum_state_non_ortho_d_final_vs_test_accuracy.npy')[::-1]
+    ortho_test_accuracies = np.load('Classifiers/mnist_sum_states/sum_state_ortho_d_final_vs_test_accuracy.npy')[::-1]
+
+    #x = [2, 10, 20, 32, 50, 100, 150, 200, 250, 300, 310, 320, 330, 350]#range(2, 50, 2)
+    x = range(2, 33, 2)
+    plt.plot(x, non_ortho_training_accuracies, linestyle = 'dashed', color = 'tab:blue')
+    plt.plot(x, ortho_training_accuracies, linestyle = 'dashed', color = 'tab:orange')
+    plt.plot(x, non_ortho_test_accuracies, color = 'tab:blue')
+    plt.plot(x, ortho_test_accuracies, color = 'tab:orange')
+    plt.plot([],[],linestyle = 'dashed', color = 'grey', label = 'Training Accuracy')
+    plt.plot([],[],linestyle = 'solid', color = 'grey', label = 'Test Accuracy')
+    plt.plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:blue', label = 'Non-orthogonal')
+    plt.plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:orange', label = 'Orthogonal')
+    plt.xlabel('$D_{final}$')
+    plt.ylabel('Accuracy')
+    #plt.title('$D_{encode}^{train} = D_{batch} = D_{final} = D_{total}$\n $D_{encode}^{test} = 32$')
+    plt.title('$D_{encode} = D_{batch} = 32$')
+    plt.legend()
+    #plt.savefig('proper_norm_mnist_D_total_big_dataset_results.pdf')
+    plt.show()
+    assert()
+    """
     non_ortho_training_accuracies2 = np.load('Classifiers/Big_Classifiers/non_ortho_training_accuracies_32_50.npy')[1:]
     ortho_training_accuracies2 = np.load('Classifiers/Big_Classifiers/ortho_training_accuracies_32_50.npy')[1:]
     non_ortho_test_accuracies2 = np.load('Classifiers/Big_Classifiers/non_ortho_test_accuracies_32_50.npy')[1:]
@@ -208,12 +228,17 @@ def acc_vs_d_total_figure():
     ortho_training_accuracies = np.append(ortho_training_accuracies, ortho_training_accuracies2)
     non_ortho_test_accuracies = np.append(non_ortho_test_accuracies, non_ortho_test_accuracies2)
     ortho_test_accuracies = np.append(ortho_test_accuracies, ortho_test_accuracies2)
+    """
+    non_ortho_training_accuracies = np.load('Classifiers/fashion_mnist/non_ortho_training_accuracies_2_32_final_3.npy')
+    ortho_training_accuracies = np.load('Classifiers/fashion_mnist/ortho_training_accuracies_2_32_final_3.npy')
+    non_ortho_test_accuracies = np.load('Classifiers/fashion_mnist/non_ortho_test_accuracies_2_32_final_3.npy')
+    ortho_test_accuracies = np.load('Classifiers/fashion_mnist/ortho_test_accuracies_2_32_final_3.npy')
 
     fig = plt.figure()
     gs = fig.add_gridspec(2, hspace=0.3)
     axs = gs.subplots(sharey = True, sharex = False)
 
-    x = range(2,len(non_ortho_training_accuracies)+2)
+    x = range(2, 50, 2)
     axs[1].plot(x,non_ortho_training_accuracies, linestyle = 'dashed', color = 'tab:blue')
     axs[1].plot(x,ortho_training_accuracies, linestyle = 'dashed', color = 'tab:orange')
     axs[1].plot(x,non_ortho_test_accuracies, color = 'tab:blue')
@@ -244,12 +269,12 @@ def acc_vs_d_total_figure():
     axs[1].yaxis.set_label_coords(-0.075,1.15)
 
     axs[1].set_xlim([2, 50])
-    non_ortho_d_final_vs_training_acc = np.load('results/non_ortho_d_final_vs_training_acc.npy')
-    ortho_d_final_vs_training_acc = np.load('results/ortho_d_final_vs_training_acc.npy')
-    non_ortho_d_final_vs_test_acc = np.load('results/non_ortho_d_final_vs_test_acc.npy')
-    ortho_d_final_vs_test_acc = np.load('results/ortho_d_final_vs_test_acc.npy')
+    non_ortho_d_final_vs_training_acc = np.load('Classifiers/fashion_mnist/non_ortho_d_final_vs_training_accuracy.npy')
+    ortho_d_final_vs_training_acc = np.load('Classifiers/fashion_mnist/ortho_d_final_vs_training_accuracy.npy')
+    non_ortho_d_final_vs_test_acc = np.load('Classifiers/fashion_mnist/non_ortho_d_final_vs_test_accuracy.npy')
+    ortho_d_final_vs_test_acc = np.load('Classifiers/fashion_mnist/ortho_d_final_vs_test_accuracy.npy')
 
-    x2 = range(2, 33)
+    x2 = range(2, 33, 2)
     axs[0].set_xticks(np.arange(2, 33, 2))
     axs[0].set_yticks(np.arange(0.1, 0.86, 0.1))
     axs[0].grid(alpha = 0.8)
@@ -267,18 +292,15 @@ def acc_vs_d_total_figure():
     label3 = axs[0].plot([],[],label = '$D_{encode} = D_{batch} = 32$', linewidth = 0, color = 'k')
     legend4 = axs[0].legend(handles=label3, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.945,0))
 
-    plt.savefig('accuracy_vs_D_final.pdf')
+    plt.savefig('fashion_mnist_accuracy_vs_D_final.pdf')
     plt.tight_layout()
     plt.show()
 
-
-
-
 def acc_vs_d_encode_d_batch_d_final():
-    d_batch_accuracies = np.load('results/d_batch_vs_acc_d_final_10_20_32.npy').reshape(-1,3).T
-    d_encode_accuracies = np.load('results/d_encode_vs_acc_d_final_10_20_32.npy').reshape(-1,3).T
+    d_batch_accuracies = np.load('Classifiers/fashion_mnist/d_batch_vs_acc_d_final_10_20_32.npy').reshape(-1,3).T
+    d_encode_accuracies = np.load('Classifiers/fashion_mnist/d_encode_vs_acc_d_final_10_20_32.npy').reshape(-1,3).T
 
-    x = range(2, 33)
+    x = range(2, 33, 2)
     """
     for d_final, accuracy in zip([10, 20, 32], d_batch_accuracies):
         plt.plot(x, accuracy, label = '$D_{final}'+ f'= {d_final}$')
@@ -326,8 +348,8 @@ def acc_vs_d_encode_d_batch_d_final():
     axs[0].set_xticks(np.arange(2, 33, 2))
     axs[1].set_xticks(np.arange(2, 33, 2))
 
-    axs[0].set_yticks(np.arange(0, 0.9, 0.2))
-    axs[1].set_yticks(np.arange(0.6, 0.86, 0.05))
+    axs[0].set_yticks(np.arange(0, 0.7, 0.1))
+    axs[1].set_yticks(np.arange(0.35, 0.7, 0.05))
     #axs[2].set_yticks(np.arange(0.2, 0.86, 0.2))
 
     #plt.setp( axs[0].get_xticklabels(), visible=False)
@@ -339,12 +361,12 @@ def acc_vs_d_encode_d_batch_d_final():
     axs[1].set_xlim([2,32])
 
 
-    axs[1].set_ylim([0.6,0.85])
+    #axs[1].set_ylim([0.6,0.85])
 
 
 
 
-    plt.savefig('acc_vs_d_batch_d_encode.pdf')
+    plt.savefig('fashion_acc_vs_d_batch_d_encode.pdf')
     plt.show()
     assert()
 
@@ -391,7 +413,7 @@ def variational_test_accuracies():
     plt.show()
 
 if __name__ == '__main__':
-    acc_vs_d_encode_d_batch_d_final()
+    acc_vs_d_total_figure()
     #variational_test_accuracies()
 
     """

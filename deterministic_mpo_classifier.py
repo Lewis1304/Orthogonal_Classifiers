@@ -85,6 +85,25 @@ def adding_batches(list_to_add, D, batch_num=2, truncate=True, orthogonalise=Fal
             result.append(reduce(add_sublist, ((D, orthogonalise), sub_list)))
     return result
 
+def fmps_adding_batches(list_to_add, D, batch_num=2):
+    result = []
+    for i in range(int(len(list_to_add) / batch_num) + 1):
+        sub_list = list_to_add[batch_num * i : batch_num * (i + 1)]
+        if len(sub_list) > 0:
+            result.append(reduce(fmps_add_sublist, (D, sub_list)))
+    return result
+
+def fmps_add_sublist(*args):
+
+    B_D = args[0]
+    sub_list_fmps = args[1]
+    N = len(sub_list_fmps)
+
+    c = sub_list_fmps[0]
+    for i in range(1, N):
+        c = c.add(sub_list_fmps[i])
+
+    return c.left_canonicalise(B_D, sweep_back = False)
 
 """
 Prepare classifier
@@ -92,20 +111,9 @@ Prepare classifier
 
 
 def prepare_batched_classifier(
-    mps_train, labels, D_total, batch_num, prep_sum_states = False
+    mps_train, labels, q_hairy_bitstrings, D_batch, batch_nums, prep_sum_states = False
 ):
 
-    possible_labels = list(set(labels))
-    n_sites = mps_train[0].num_tensors
-
-    #Bitstrings have to be non-truncated
-
-    hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_sites
-    )
-    q_hairy_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, n_sites, truncated=True
-    )
     train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
 
     # Converting qMPOs into fMPOs
@@ -113,42 +121,44 @@ def prepare_batched_classifier(
 
     # Adding fMPOs together
     if prep_sum_states:
+        i = 0
         while len(MPOs) > 10:
-            MPOs = adding_batches(MPOs, D_total, batch_num)
+            batch_num = batch_nums[i]
+            MPOs = adding_batches(MPOs, D_batch, batch_num)
+            i += 1
         return MPOs
 
     else:
+        i = 0
         while len(MPOs) > 1:
-            MPOs = adding_batches(MPOs, D_total, batch_num)
+            batch_num = batch_nums[i]
+            MPOs = adding_batches(MPOs, D_batch, batch_num)
+            i += 1
         return MPOs[0]
 
-
-def prepare_sum_states(
-    mps_train, labels, D_total, batch_num
+def prepare_batched_fmps_classifier(
+    mps_train, labels, D_batch, batch_nums, prep_sum_states = False
 ):
 
-    possible_labels = list(set(labels))
-    n_hairy_sites = int(np.ceil(mlog(len(possible_labels), 4)))
-    n_sites = mps_train[0].num_tensors
-
-    #Bitstrings have to be non-truncated
-
-    hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_sites
-    )
-    q_hairy_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, n_hairy_sites, n_sites, truncated=True
-    )
-    train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
-
     # Converting qMPOs into fMPOs
-    MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
+    fMPSs = [fMPS([site.data for site in mpo.tensors]) for mpo in mps_train]
 
     # Adding fMPOs together
-    while len(MPOs) > batch_num:
-        MPOs = adding_batches(MPOs, D_total, batch_num)
+    if prep_sum_states:
+        i = 0
+        while len(fMPSs) > 10:
+            batch_num = batch_nums[i]
+            fMPSs = fmps_adding_batches(fMPSs, D_batch, batch_num)
+            i += 1
+        return fMPSs
 
-    return MPOs
+    else:
+        i = 0
+        while len(fMPSs) > 1:
+            batch_num = batch_nums[i]
+            fMPSs = fmps_adding_batches(fMPSs, D_batch, batch_num)
+        return fMPSs[0]
+
 
 def prepare_linear_classifier(mps_train, labels):
     possible_labels = list(set(labels))
