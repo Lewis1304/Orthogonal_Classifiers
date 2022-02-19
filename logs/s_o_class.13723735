@@ -1,11 +1,0 @@
-/users/k1461892/.conda/envs/variational_orthogonal_classifiers/lib/python3.8/site-packages/numba/np/ufunc/parallel.py:365: NumbaWarning: The TBB threading layer requires TBB version 2019.5 or later i.e., TBB_INTERFACE_VERSION >= 11005. Found TBB_INTERFACE_VERSION = 6103. The TBB threading layer is disabled.
-  warnings.warn(problem)
-Experiment: Orthogonalise inbetween.
-  0%|          | 0/1 [00:00<?, ?it/s]100%|██████████| 1/1 [01:47<00:00, 107.12s/it]+304.016252350870 [best: +304.016252350870] : 100%|██████████| 1/1 [01:47<00:00, 107.12s/it]+304.016252350870 [best: +304.016252350870] : : 2it [03:28, 103.93s/it]                     +302.372509103502 [best: +302.372509103502] : : 2it [03:28, 103.93s/it]+302.372509103502 [best: +302.372509103502] : : 2it [03:28, 104.41s/it]
-Traceback (most recent call last):
-  File "experiments.py", line 406, in <module>
-    all_classes_experiment_ortho_inbetween(
-  File "experiments.py", line 310, in all_classes_experiment_ortho_inbetween
-    losses.append(optmzr.loss)
-NameError: name 'optmzr' is not defined
-finished

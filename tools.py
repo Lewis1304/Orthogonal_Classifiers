@@ -11,6 +11,7 @@ import quimb.tensor as qtn
 from quimb.tensor.tensor_core import rand_uuid
 
 from oset import oset
+from scipy.linalg import null_space
 
 from xmps.fMPS import fMPS
 from fMPO_reduced import fMPO
@@ -21,7 +22,8 @@ Data tools
 """
 
 
-def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
+def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False):
+    #mnist = tf.keras.datasets.fashion_mnist
     mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
@@ -39,20 +41,25 @@ def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
 
     if equal_numbers:
         n_train_per_class = n_train // len(list(set(y_train)))
-        n_test_per_class = n_test // len(list(set(y_train)))
+        #n_test_per_class = n_test // len(list(set(y_train)))
 
-        grouped_x_train = [x_train[y_train == label][:n_train_per_class] for label in list(set(y_train))]
-        grouped_x_test = [x_test[y_test == label][:n_test_per_class] for label in list(set(y_test))]
+        grouped_x_train = [
+            x_train[y_train == label][:n_train_per_class]
+            for label in list(set(y_train))
+        ]
+        #grouped_x_test = [
+        #    x_test[y_test == label][:n_test_per_class] for label in list(set(y_test))
+        #]
 
         train_data = np.array([images for images in zip(*grouped_x_train)])
         train_labels = [list(set(y_train)) for _ in train_data]
-        test_data = np.array([images for images in zip(*grouped_x_test)])
-        test_labels = [list(set(y_test)) for _ in range(len(test_data))]
+        #test_data = np.array([images for images in zip(*grouped_x_test)])
+        #test_labels = [list(set(y_test)) for _ in range(len(test_data))]
 
         x_train = np.array([item for sublist in train_data for item in sublist])
         y_train = np.array([item for sublist in train_labels for item in sublist])
-        x_test = np.array([item for sublist in test_data for item in sublist])
-        y_test = np.array([item for sublist in test_labels for item in sublist])
+        #x_test = np.array([item for sublist in test_data for item in sublist])
+        #y_test = np.array([item for sublist in test_labels for item in sublist])
 
     x_train, x_test = (x_train.reshape(len(x_train), -1) / 255)[:n_train], (
         x_test.reshape(len(x_test), -1) / 255
@@ -61,33 +68,72 @@ def load_data(n_train, n_test=10, shuffle = False, equal_numbers = False):
 
     return x_train, y_train, x_test, y_test
 
+
 def arrange_data(data, labels, **kwargs):
 
-    if list(kwargs.values())[0] == 'random':
+    if list(kwargs.values())[0] == "random":
         r_train = np.arange(len(data))
         np.random.shuffle(r_train)
         return data[r_train], labels[r_train]
 
-    elif list(kwargs.values())[0] == 'one of each':
+    elif list(kwargs.values())[0] == "one of each":
         return data, labels
 
-    elif list(kwargs.values())[0] == 'one class':
+    elif list(kwargs.values())[0] == "one class":
         possible_labels = list(set(labels))
-        data = [[data[i] for i in range(k, len(data), len(possible_labels))] for k in possible_labels]
+        data = [
+            [data[i] for i in range(k, len(data), len(possible_labels))]
+            for k in possible_labels
+        ]
         data = np.array([image for label in data for image in label])
 
-        labels = [[labels[i] for i in range(k, len(labels), len(possible_labels))] for k in possible_labels]
+        labels = [
+            [labels[i] for i in range(k, len(labels), len(possible_labels))]
+            for k in possible_labels
+        ]
         labels = np.array([image for label in labels for image in label])
         return data, labels
     else:
-        raise Exception('Arrangement type not understood')
+        raise Exception("Arrangement type not understood")
+
+def shuffle_arranged_data(data, labels):
+    #Assumes data is correctly arranged
+    #And equal amounts of data
+
+    num_class = len(labels) // len(list(set(labels)))
+    shuffled_data = []
+    shuffled_labels = []
+
+    for i in range(len(data) // num_class):
+
+        #Data of all the same class
+        sub_data = data[i*num_class:(i+1)*num_class]
+        sub_labels = labels[i*num_class:(i+1)*num_class]
+
+        shuff = np.arange(len(sub_labels))
+        np.random.shuffle(shuff)
+
+        sub_data = np.array(sub_data)[shuff]
+        sub_labels = np.array(sub_labels)[shuff]
+
+        shuffled_data.append(sub_data)
+        shuffled_labels.append(sub_labels)
+
+    shuffled_data = np.array([item for sublist in shuffled_data for item in sublist])
+    shuffled_labels = np.array([item for sublist in shuffled_labels for item in sublist])
+
+    return shuffled_data, shuffled_labels
+
+
+
+
 
 """
 Bitstring tools
 """
 
 
-def create_bitstrings(possible_labels, n_hairysites):
+def create_bitstrings(possible_labels, n_hairysites = 1):
     return [bin(label)[2:].zfill(n_hairysites * 2) for label in possible_labels]
 
 
@@ -95,7 +141,7 @@ def bitstring_to_product_state_data(bitstring_data):
     return fMPS().from_product_state(bitstring_data).data
 
 
-def bitstring_data_to_QTN(data, n_hairysites, n_sites, truncated=False):
+def bitstring_data_to_QTN(data, n_sites, truncated=True):
     # Doesn't work for truncated_data
     prod_state_data = bitstring_to_product_state_data(data)
     if truncated:
@@ -128,6 +174,35 @@ def bitstring_data_to_QTN(data, n_hairysites, n_sites, truncated=False):
         q_product_states.append(qtn.TensorNetwork(qtn_data))
     return q_product_states
 
+
+def padded_bitstring_data_to_QTN(data, uclassifier):
+    prod_state_data = [bitstring_to_product_state_data(i) for i in data]
+
+    prod_state_data = [[
+        [
+            site1[:site2.shape[1]]
+            for site1, site2 in zip(l, uclassifier.tensors)
+        ]
+        for l in padding
+    ]
+    for padding in prod_state_data]
+
+    q_product_states = []
+    for padding in prod_state_data:
+        paddings = []
+        for prod_state in padding:
+            qtn_data = []
+            previous_ind = rand_uuid()
+            for j, site in enumerate(prod_state):
+                next_ind = rand_uuid()
+                tensor = qtn.Tensor(
+                    site, inds=(f"s{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+                )
+                previous_ind = next_ind
+                qtn_data.append(tensor)
+            paddings.append(qtn.TensorNetwork(qtn_data))
+        q_product_states.append(paddings)
+    return q_product_states
 
 """
 MPS encoding tools
@@ -208,8 +283,9 @@ def load_qtn_classifier(dir):
 
     return data_to_QTN(data)
 
+
 def pad_qtn_classifier(QTN):
-    D_max = QTN.max_bond()
+    D_max = np.max([np.max(tensor.shape, axis=-1) for tensor in QTN.tensors])
     qtn_data = [site.data for site in QTN.tensors]
 
     data_padded = []
@@ -217,15 +293,16 @@ def pad_qtn_classifier(QTN):
         d, s, i, j = site.shape
 
         if k == 0:
-            site_padded = np.pad(site, ((0,0),(0,0),(0,0),(0,D_max-j)))
+            site_padded = np.pad(site, ((0, 0), (0, 0), (0, 0), (0, D_max - j)))
         elif k == (len(qtn_data) - 1):
-            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,0)))
+            site_padded = np.pad(site, ((0, 0), (0, 0), (0, D_max - i), (0, 0)))
         else:
-            site_padded = np.pad(site, ((0,0),(0,0),(0,D_max-i),(0,D_max-j)))
+            site_padded = np.pad(site, ((0, 0), (0, 0), (0, D_max - i), (0, D_max - j)))
 
         data_padded.append(site_padded)
 
     return data_to_QTN(data_padded)
+
 
 if __name__ == "__main__":
     pass

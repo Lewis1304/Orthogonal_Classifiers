@@ -1,236 +1,358 @@
-"""
-def test_add_mpos():
+import os
 
-    # Check mpos are added in the right place (check for 3, for speed)
-    added_mpos = mpo_train[0]
-    for mpo in mpo_train[1:3]:
-        added_mpos = add_mpos(added_mpos, mpo)
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+import tensorflow as tf
+import quimb
+import numpy as np
+from oset import oset
+from xmps.fMPS import fMPS
+from quimb.tensor.tensor_core import rand_uuid
+import quimb.tensor as qtn
+from quimb.tensor.optimize import TNOptimizer
+import math
+import pytest
 
-    # Check data of added MPOs (checks shape too).
-    for i, (site0, site1, site2, site3) in enumerate(
-        zip(
-            mpo_train[0].tensors,
-            mpo_train[1].tensors,
-            mpo_train[2].tensors,
-            added_mpos.tensors,
-        )
-    ):
+import sys
 
-        if i == 0:
-            assert np.array_equal(site0.data, site3.data[:, :, :, : site0.shape[3]])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, :, site0.shape[3] : site0.shape[3] + site1.shape[3]],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    :,
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
+sys.path.append("../")
+from tools import *
+from variational_mpo_classifiers import *
+from deterministic_mpo_classifier import (
+    mpo_encoding,
+    class_encode_mps_to_mpo,
+    add_sublist,
+    adding_batches,
+    prepare_batched_classifier,
+    unitary_qtn
+)
 
-        elif i == (mpo_train[0].num_tensors - 1):
-            assert np.array_equal(site0.data, site3.data[:, :, : site0.shape[2], :])
-            assert np.array_equal(
-                site1.data,
-                site3.data[:, :, site0.shape[2] : site0.shape[2] + site1.shape[2], :],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    :,
-                ],
-            )
-
-        else:
-            assert np.array_equal(
-                site0.data, site3.data[:, :, : site0.shape[2], : site0.shape[3]]
-            )
-            assert np.array_equal(
-                site1.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2] : site0.shape[2] + site1.shape[2],
-                    site0.shape[3] : site0.shape[3] + site1.shape[3],
-                ],
-            )
-            assert np.array_equal(
-                site2.data,
-                site3.data[
-                    :,
-                    :,
-                    site0.shape[2]
-                    + site1.shape[2] : site0.shape[2]
-                    + site1.shape[2]
-                    + site2.shape[2],
-                    site0.shape[3]
-                    + site1.shape[3] : site0.shape[3]
-                    + site1.shape[3]
-                    + site2.shape[3],
-                ],
-            )
-"""
-
-"""
-def test_QTN_to_fMPO_and_back():
-    fmpo = QTN_to_fMPO(mpo_classifier)
-    QTN = fMPO_to_QTN(fmpo)
-
-    # Check that conversion (and back) doesn't change data.
-    for original, new in zip(mpo_classifier.tensors, QTN.tensors):
-        assert np.array_equal(original.data, new.data)
-"""
+from xmps.ncon import ncon as nc
 
 
-"""
-def test_compress():
+def ncon(*args, **kwargs):
+    return nc(
+        *args, check_indices=False, **kwargs
+    )  # make default ncon not check indices
 
-    # Truncated mpo needed otherwise dim(s) explodes when canonicalising
-    truncated_mpo_classifier_data = [
-        site.data[:, :1, :, :] if i < (n_sites - n_hairysites) else site.data
-        for i, site in enumerate(mpo_classifier.tensors)
+
+n_train = 100
+n_test = 100
+D_total = 10
+batch_num = 10
+
+x_train, y_train, x_test, y_test = load_data(n_train, n_test, equal_numbers=True)
+
+possible_labels = list(set(y_train))
+n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
+n_pixels = len(x_train[0])
+
+hairy_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
+    possible_labels, n_sites
+)
+one_site_bitstrings_data_untruncated_data = create_hairy_bitstrings_data(
+    possible_labels, n_sites
+)
+
+quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    hairy_bitstrings_data_untruncated_data, n_sites, truncated=False
+)
+truncated_quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    hairy_bitstrings_data_untruncated_data, n_sites, truncated=True
+)
+one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    one_site_bitstrings_data_untruncated_data, n_sites, truncated=False
+)
+truncated_one_site_quimb_hairy_bitstrings = bitstring_data_to_QTN(
+    one_site_bitstrings_data_untruncated_data, n_sites, truncated=True
+)
+
+
+fmps_images = [image_to_mps(image, D_total) for image in x_train]
+
+mps_train = mps_encoding(x_train, D_total)
+
+mpo_train = mpo_encoding(mps_train, y_train, quimb_hairy_bitstrings)
+truncated_mpo_train = mpo_encoding(mps_train, y_train, truncated_quimb_hairy_bitstrings)
+
+fMPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in truncated_mpo_train]
+
+def test_class_encode_mps_to_mpo():
+    # Encode a single image with all different classes.
+    mpo_train = [
+        class_encode_mps_to_mpo(mps_train[0], label, quimb_hairy_bitstrings)
+        for label in possible_labels
     ]
-    truncated_mpo_classifier = data_to_QTN(truncated_mpo_classifier_data)
-    truncated_mpo_classifier /= (
-        truncated_mpo_classifier.H @ truncated_mpo_classifier
-    ) ** 0.5
 
-    compressed_mpo = compress_QTN(truncated_mpo_classifier, D=None, orthogonalise=False)
-
-    # Check norm is still 1
-    assert np.isclose((compressed_mpo.H @ compressed_mpo), 1)
-
-    # Check overlap between initial classifier
-    # and compressed mpo with D=None is 1.
-    assert np.isclose((truncated_mpo_classifier.H @ compressed_mpo).norm(), 1)
-
-    # Check canonicl form- compress procedure leaves mpo in mixed canonical form
-    # center site is at left most hairest site.
-    for n, site in enumerate(compressed_mpo.tensors):
-        d, s, i, j = site.shape
-        if n < (n_sites - n_hairysites):
-            # reshape from (d, s, i, j) --> (d*j, s*i). As SVD was done like that.
-            U = site.data.transpose(0, 3, 1, 2).reshape(d * j, s * i)
-            Uh = U.conj().T
-            assert np.array_equal(np.round(Uh @ U, 5), np.eye(s * i))
-        else:
-            # reshape from (d, s, i, j) --> (i, s*j*d). As SVD was done like that.
-            U = site.data.transpose(2, 1, 3, 0).reshape(i, s * j * d)
-            Uh = U.conj().T
-            assert np.array_equal(np.round(U @ Uh, 5), np.eye(i))
-
-    # Check compressed has right shape for range of different Ds
-    for max_D in range(1, 5):
-        compressed_mpo = compress_QTN(
-            truncated_mpo_classifier, D=max_D, orthogonalise=False
-        )
-        for i, (site0, site1) in enumerate(
-            zip(compressed_mpo.tensors, truncated_mpo_classifier)
+    # Check whether mpo encoded data returns mps data.
+    # By projecting onto corresponding label bitstring.
+    # Assume |0> padding for now.
+    for label in possible_labels:
+        for i, (mpo_site, mps_site, bs_site) in enumerate(
+            zip(mpo_train[label], mps_train[0], quimb_hairy_bitstrings[label])
         ):
+            if i < (n_sites - 1):
+                # same as projecting onto |00> state
+                assert np.array_equal(mpo_site[:, 0, :, :], mps_site.data)
+            else:
+                # Projecting onto label bitstring state for that site
+                proj = np.einsum("dsij, s...", mpo_site, bs_site.data)
+                assert np.array_equal(proj.squeeze(), mps_site.data.squeeze())
 
-            d0, s0, i0, j0 = site0.shape
-            d1, s1, i1, j1 = site1.shape
+    # Truncated
+    truncated_mpo_train = [
+        class_encode_mps_to_mpo(mps_train[0], label, truncated_quimb_hairy_bitstrings)
+        for label in possible_labels
+    ]
 
-            assert d0 == d1
-            assert s0 == s1
+    for label in possible_labels:
+        for i, (mpo_site, mps_site, bs_site) in enumerate(
+            zip(
+                truncated_mpo_train[label],
+                mps_train[0],
+                truncated_quimb_hairy_bitstrings[label],
+            )
+        ):
+            if i < (n_sites - 1):
+                # same as projecting onto |00> state
+                assert np.array_equal(mpo_site[:, 0, :, :], mps_site.data)
+            else:
+                # Projecting onto label bitstring state for that site
+                proj = np.einsum("dsij, s...", mpo_site, bs_site.data)
+                assert np.array_equal(proj.squeeze(), mps_site.data.squeeze())
 
-            assert i0 <= max_D
-            assert j0 <= max_D
-    # TODO: Orthogonalisation test
-"""
-"""
-def test_compress_one_site():
+    # One Site- untruncated
+    untruncated_one_site_mpo_train = [
+        class_encode_mps_to_mpo(mps_train[0], label, one_site_quimb_hairy_bitstrings)
+        for label in possible_labels
+    ]
 
+    for label in possible_labels:
+        for i, (mpo_site, mps_site, bs_site) in enumerate(
+            zip(
+                untruncated_one_site_mpo_train[label],
+                mps_train[0],
+                one_site_quimb_hairy_bitstrings[label],
+            )
+        ):
+            if i < (n_sites - 1):
+                # same as projecting onto |00> state
+                assert np.array_equal(mpo_site[:, 0, :, :], mps_site.data)
+            else:
+                # Projecting onto label bitstring state for that site
+                proj = np.einsum("dsij, s...", mpo_site, bs_site.data)
+                assert np.array_equal(proj.squeeze(), mps_site.data.squeeze())
+
+    # One Site- truncated
+    truncated_one_site_mpo_train = [
+        class_encode_mps_to_mpo(
+            mps_train[0], label, truncated_one_site_quimb_hairy_bitstrings
+        )
+        for label in possible_labels
+    ]
+
+    for label in possible_labels:
+        for i, (mpo_site, mps_site, bs_site) in enumerate(
+            zip(
+                truncated_one_site_mpo_train[label],
+                mps_train[0],
+                truncated_one_site_quimb_hairy_bitstrings[label],
+            )
+        ):
+            if i < (n_sites - 1):
+                # same as projecting onto |00> state
+                assert np.array_equal(mpo_site[:, 0, :, :], mps_site.data)
+            else:
+                # Projecting onto label bitstring state for that site
+                proj = np.einsum("dsij, s...", mpo_site, bs_site.data)
+                assert np.array_equal(proj.squeeze(), mps_site.data.squeeze())
+
+
+def test_mpo_encoding():
+    # Check conversion from data to qmpo doesn't affect data
+    mpo_train_data = [
+        class_encode_mps_to_mpo(mps_train[i], y_train[i], quimb_hairy_bitstrings)
+        for i in range(len(mps_train))
+    ]
+
+    for TN_data, TN in zip(mpo_train_data, mpo_train):
+        for tensor_data, tensor in zip(TN_data, TN.tensors):
+            assert np.array_equal(tensor_data, tensor.data)
+
+
+def test_add_sublist():
+    # Only works for truncated images
+    # Cannot test if added images without truncation is just block diagonal.
+    # Since SVD procedure is always done.
+
+    # Test whether bond rank is correct
+    D_max = 10
+    sub_list_result = add_sublist((D_max, False), fMPOs)
+    assert sub_list_result.D == 10
+
+    # Ensure shape is unchanged
+    for k, (added_site, site) in enumerate(zip(sub_list_result.data, fMPOs[0].data)):
+        d1, s1, i1, j1 = added_site.shape
+        d2, s2, i2, j2 = site.shape
+
+        assert d1 == d1
+        assert s1 == s2
+        assert i1 <= D_max
+        assert j1 <= D_max
+
+        if k == 0:
+            assert i1 == 1
+        if k == (sub_list_result.L - 1):
+            assert j1 == 1
+
+
+def test_adding_batches():
+
+    # Test for no truncation, that resulting MPO has D=n_train
+    # Since there's redundency. It could be loss than D_n_train
+    # Therefore just check its overal half (which even with redundency it should)
+    batch_added_mpo = adding_batches(fMPOs, None, batch_num)[0]
+    assert batch_added_mpo.D > len(fMPOs)//2
+
+    # Test for truncation, that resulting MPO has D=D_max
+    batch_added_mpo = adding_batches(fMPOs, 5, batch_num)[0]
+    assert batch_added_mpo.D == 5
+
+
+def test_prepare_batched_classifier():
+
+    # Ensure shape is same as mpo images, bar virtual bonds
+    # multiple sites
+    D_max = 10
+    arr_x_train, arr_y_train = arrange_data(x_train, y_train, arrangement="one class")
+    arr_mps_train = mps_encoding(arr_x_train, D_max)
+    multiple_site_prepared_classifier = prepare_batched_classifier(
+        arr_mps_train, arr_y_train, D_max, batch_num
+    )
+
+    for k, (prep_site, site) in enumerate(
+        zip(multiple_site_prepared_classifier.data, fMPOs[0].data)
+    ):
+        d1, s1, i1, j1 = prep_site.shape
+        d2, s2, i2, j2 = site.shape
+
+        assert d1 == d1
+        assert s1 == s2
+        assert i1 <= D_max
+        assert j1 <= D_max
+
+        if k == 0:
+            assert i1 == 1
+        if k == (fMPOs[0].L - 1):
+            assert j1 == 1
+
+    # one site
+    one_site_prepared_classifier = prepare_batched_classifier(
+        arr_mps_train, arr_y_train, D_max, batch_num
+    )
     one_site_mpo_train = mpo_encoding(
         mps_train, y_train, truncated_one_site_quimb_hairy_bitstrings
     )
-    one_site_mpo_classifier = create_mpo_classifier(one_site_mpo_train, seed=420)
-
-    one_site_compressed_mpo = compress_QTN(
-        one_site_mpo_classifier, D=None, orthogonalise=False
-    )
-
-    # Check norm is still 1
-    assert np.isclose((one_site_compressed_mpo.H @ one_site_compressed_mpo), 1)
-
-    # Check overlap between initial classifier
-    # and compressed mpo with D=None is 1.
-    assert np.isclose((one_site_mpo_classifier.H @ one_site_compressed_mpo).norm(), 1)
-
-    orthogonal_one_site_mpo = compress_QTN(
-        one_site_mpo_classifier, D=None, orthogonalise=True
-    )
-    # Check Canonical form and orthogonal
-    for k, site in enumerate(orthogonal_one_site_mpo.tensors):
-        d, s, i, j = site.data.shape
-        U = site.data.transpose(0, 2, 1, 3).reshape(d * i, s * j)
-        Uh = U.conj().T
-        if k < one_site_compressed_mpo.num_tensors - 1:
-            assert np.isclose(Uh @ U, np.eye(s * j)).all()
-        else:
-            assert np.isclose(U @ Uh, np.eye(d * i)).all()
-"""
-"""
-def test_batch_adding_mpos():
-    mpos = []
-
-    # Truncate images- required for Orthogonalisation procedure
-    # to work.
-    for mpo in mpo_train:
-        truncated_mpo_data = [
-            site.data[:, :1, :, :] if i < (n_sites - n_hairysites) else site.data
-            for i, site in enumerate(mpo.tensors)
-        ]
-        truncated_mpo = data_to_QTN(truncated_mpo_data)
-        truncated_mpo /= (truncated_mpo.H @ truncated_mpo) ** 0.5
-        mpos.append(truncated_mpo)
-
-    grouped_images = [
-        [mpos[i] for i in range(n_train) if y_train[i] == label]
-        for label in possible_labels
+    fMPOs_one_site = [
+        fMPO([site.data for site in mpo.tensors]) for mpo in one_site_mpo_train
     ]
-    grouped_mpos = [mpo_from_each_class for mpo_from_each_class in zip(*grouped_images)]
 
-    batch_added_mpos = batch_adding_mpos(
-        grouped_mpos, D=None, orthogonalise=False, compress=False
+    for k, (prep_site, site) in enumerate(
+        zip(one_site_prepared_classifier.data, fMPOs_one_site[0].data)
+    ):
+        d1, s1, i1, j1 = prep_site.shape
+        d2, s2, i2, j2 = site.shape
+
+        assert d1 == d1
+        assert s1 == s2
+        assert i1 <= D_max
+        assert j1 <= D_max
+
+        if k == 0:
+            assert i1 == 1
+        if k == (fMPOs_one_site[0].L - 1):
+            assert j1 == 1
+
+
+    classifier_data = one_site_prepared_classifier.compress_one_site(
+        D=D_max, orthogonalise=False
+    )
+    squeezed_one_site_mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
+
+    squeezed_truncated_quimb_hairy_bitstrings = [
+        i for i in truncated_quimb_hairy_bitstrings
+    ]
+    squeezed_truncated_one_site_quimb_hairy_bitstrings = [
+        i for i in truncated_one_site_quimb_hairy_bitstrings
+    ]
+
+    arr_mps_train = mps_encoding(arr_x_train, D_max)
+    squeezed_mps_train = [i for i in arr_mps_train]
+
+
+    one_site_predictions = classifier_predictions(
+        squeezed_one_site_mpo_classifier,
+        squeezed_mps_train,
+        squeezed_truncated_one_site_quimb_hairy_bitstrings,
     )
 
-    # Check, for compress = False that batch_adding_mpos is equivalent to simply adding all mpos.
-    flattened_grouped_mpos = [item for sublist in grouped_mpos for item in sublist]
-    added_mpos = flattened_grouped_mpos[0]
-    for mpo in flattened_grouped_mpos[1:]:
-        added_mpos = add_mpos(added_mpos, mpo)
-    # "compression" required since compression done in batch addng changes the local values
-    added_mpos = compress_QTN(added_mpos, D=None, orthogonalise=False)
-    i = 0
-    for site0, site1 in zip(batch_added_mpos.tensors, added_mpos.tensors):
-        assert np.array_equal(site0.data, site1.data)
 
-    # Check shape is correct for D != None.
-    max_D = 5
-    batch_added_mpos = batch_adding_mpos(
-        grouped_mpos, D=max_D, orthogonalise=False, compress=True
+    one_site_result = evaluate_classifier_top_k_accuracy(
+        one_site_predictions, arr_y_train, 1
     )
-    for site0, site1 in zip(batch_added_mpos.tensors, mpos[0].tensors):
-        d0, s0, i0, j0 = site0.shape
-        d1, s1, i1, j1 = site1.shape
 
-        assert d0 == d1
-        assert s0 == s1
+    # Check performance is above random.
+    assert one_site_result > 0.1
 
-        assert i0 <= max_D
-        assert j0 <= max_D
+    classifier_data = one_site_prepared_classifier.compress_one_site(
+        D=D_max, orthogonalise=True
+    )
+    ortho_squeezed_one_site_mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
+
+    ortho_one_site_predictions = classifier_predictions(
+        ortho_squeezed_one_site_mpo_classifier,
+        squeezed_mps_train,
+        squeezed_truncated_one_site_quimb_hairy_bitstrings,
+    )
+
+    ortho_one_site_result = evaluate_classifier_top_k_accuracy(
+        one_site_predictions, arr_y_train, 1
+    )
+
+    assert one_site_result >= ortho_one_site_result
+
 """
+def test_unitary_qtn():
+    #Test is only for prepared batch classifiers for now..
+    mps_train = mps_encoding(x_train, 32)
+
+    fmpo_classifier = prepare_batched_classifier(
+            mps_train, y_train, 32, 10, one_site=False
+        ).compress_one_site(D = None, orthogonalise = True)
+    qtn_classifier = data_to_QTN(fmpo_classifier.data)
+
+    uclassifier = unitary_qtn(qtn_classifier)
+    #test that everysite is unitary
+    for tensor in uclassifier.tensors:
+        site = tensor.data
+        d,s,i,j = site.shape
+        site = site.transpose(0,2,1,3).reshape(d * i, s * j)
+        assert np.isclose([(site.conj().T @ site ),np.eye(s*j)]).all()
+        assert np.isclose([(site @ site.conj().T),np.eye(d*i)], ).all()
+"""
+
+
+if __name__ == "__main__":
+    test_adding_batches()
+
+    # Since one site and multisite are generated differently,
+    # They will never be equivalent in losses. Therefore use the
+    # compress function to convert multisite to one site.
+    # additionally one site to multisite.
+    # These 2 should be the same. Only works with truncated though.
+    # This can go in the compress testing
+
+    # Truncated. Multisite.
+    # Truncated. Multisite to one site.
+
+    # Truncated. One site.
+    # Truncated. One site to multisite.
