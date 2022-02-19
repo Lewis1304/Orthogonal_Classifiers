@@ -78,6 +78,7 @@ def add_centre_sublist(*args):
     return c.compress_centre_one_site(B_D, orthogonalise=ortho)
 
 def initialise_experiment(n_samples,D,initialise_classifier=False,initialise_classifier_settings=(10, False),centre_site = False):
+
     D_encode, D_batch, D_final = D
     # Load & Organise Data
     x_train, y_train, x_test, y_test = load_data(
@@ -149,7 +150,7 @@ if __name__ == "__main__":
                 num_samples,
                 D,
                 initialise_classifier=True,
-                centre_site = False,
+                centre_site = True,
                 initialise_classifier_settings=(batch_num, ortho_at_end),
             )
     """
