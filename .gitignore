@@ -1,7 +1,13 @@
 git_password.txt
 __pycache__/
 testing/__pycache__/
-Classifiers/
+Classifiers/abs_stoudenmire_loss_det_init_non_ortho/
+Classifiers/abs_stoudenmire_loss_random/
+Classifiers/Big_Classifiers/
+Classifiers/Big_Imported_Classifiers/
+Classifiers/cross_entropy_loss_det_init_non_ortho/
+Classifiers/cross_entropy_random/
+Classifiers/one_site_true_ortho_at_end_true_weird_loss_2/
 results/
 models/
 logs/

@@ -324,21 +324,22 @@ def d_encode_vs_acc():
     #Can use n_train = 4913 with batch_num = 17
     num_samples = 5421*10
     #batch_nums = [139, 39, 10]
+    batch_nums = [3, 13, 139, 10]
     #num_samples = 100
     #batch_num = 10
 
     ortho_at_end = False
     D_batch = 32
 
-    x_train, y_train, x_test, y_test = load_data(
-        100,10000, shuffle=False, equal_numbers=True
-    )
+    #x_train, y_train, x_test, y_test = load_data(
+    #    100,10000, shuffle=False, equal_numbers=True
+    #)
 
-    D_test = 32
-    mps_test = mps_encoding(x_test, D_test)
+    #D_test = 32
+    #mps_test = mps_encoding(x_test, D_test)
 
     accuracies = []
-    for D_encode in tqdm(range(2, 33, 2)[14:]):
+    for D_encode in tqdm(range(24, 33, 2)):
 
         D = (D_encode, D_batch, 32)
         data, classifier, bitstrings = initialise_experiment(
@@ -347,48 +348,62 @@ def d_encode_vs_acc():
                     arrangement='one class',
                     initialise_classifier=True,
                     prep_sum_states = True,
-                    initialise_classifier_settings=([139, 39, 10], ortho_at_end),
+                    centre_site = True,
+                    initialise_classifier_settings=([3, 13, 139, 10], ortho_at_end),
                 )
         mps_images, labels = data
         _, list_of_classifiers = classifier
 
-        for D_final in tqdm([10, 32, 100]):
-            sum_states = list_of_classifiers
 
-            classifier_data = adding_batches(sum_states, D_final, 10, orthogonalise = ortho_at_end)[0]
-            classifier = data_to_QTN(classifier_data.data).squeeze()
+        path = "Classifiers/mnist_mixed_sum_states/" + f"sum_states_D_encode_{D_encode}/"
+        os.makedirs(path, exist_ok=True)
+        [save_qtn_classifier(s , "mnist_mixed_sum_states/" + f"sum_states_D_encode_{D_encode}/" + f"digit_{i}") for i, s in enumerate(list_of_classifiers)]
 
-            predictions = classifier_predictions(classifier, mps_test, bitstrings)
-            accuracy = evaluate_classifier_top_k_accuracy(predictions, y_test, 1)
+        #for D_final in tqdm([10, 32, 100]):
+        #    sum_states = list_of_classifiers
 
-            accuracies.append(accuracy)
-            np.save('results/correct_norm/mnist_non_ortho_d_encode_vs_acc_d_final_10_32_100_30_32_3', accuracies)
+        #    classifier_data = adding_batches(sum_states, D_final, 10, orthogonalise = ortho_at_end)[0]
+        #    classifier = data_to_QTN(classifier_data.data).squeeze()
+
+        #    predictions = classifier_predictions(classifier, mps_test, bitstrings)
+        #    accuracy = evaluate_classifier_top_k_accuracy(predictions, y_test, 1)
+
+        #    accuracies.append(accuracy)
+        #    np.save('results/correct_norm/mnist_non_ortho_d_encode_vs_acc_d_final_10_32_100_30_32_3', accuracies)
 
     assert()
 
 def d_batch_vs_acc(q_hairy_bitstrings):
     print('SIMULATING TEST ACCURACY VS D_BATCH')
     num_samples = 5421*10
-    batch_nums = [139, 39, 10]
+    batch_nums = [3, 13, 139, 10]
     final_batch_num = batch_nums.pop(-1)
 
     ortho_at_end = False
     D_encode = 32
-    D_test = 32
+    #D_test = 32
 
     x_train, y_train, x_test, y_test = load_data(
-        num_samples,10000, shuffle=False, equal_numbers=True
+        num_samples, shuffle=False, equal_numbers=True
     )
 
     mps_train = mps_encoding(x_train, D_encode)
-    mps_test = mps_encoding(x_test, D_test)
+    #mps_test = mps_encoding(x_test, D_test)
 
     accuracies = []
     for D_batch in tqdm(range(2, 33, 2)):
 
-        list_of_classifiers = prepare_batched_classifier(
-            mps_train, y_train, q_hairy_bitstrings, D_batch, batch_nums, True
+        list_of_classifiers = prepare_centred_batched_classifier(
+            mps_train, y_train, q_hairy_bitstrings, D_batch, batch_nums
         )
+
+        qsum_states = [data_to_QTN(s.data) for s in list_of_classifiers]
+
+        path = "Classifiers/mnist_mixed_sum_states/" + f"sum_states_D_batch_{D_batch}/"
+        os.makedirs(path, exist_ok=True)
+        [save_qtn_classifier(s , "mnist_mixed_sum_states/" + f"sum_states_D_batch_{D_batch}/" + f"digit_{i}") for i, s in enumerate(qsum_states)]
+
+        """
 
         for D_final in tqdm([10, 32, 100]):
             #print(f'D_final: {D_final}')
@@ -402,6 +417,7 @@ def d_batch_vs_acc(q_hairy_bitstrings):
 
             accuracies.append(accuracy)
             np.save('results/correct_norm/mnist_non_ortho_d_batch_vs_acc_d_final_10_32_100', accuracies)
+        """
 
     assert()
 
@@ -1004,41 +1020,43 @@ def add_centre_sublist(*args):
 
 if __name__ == "__main__":
     #single_image_sv, sum_state_sv = mps_image_singular_values()
-    #d_batch_vs_acc()
-    #d_encode_vs_acc()
-    #num_samples = 1000
+    d_encode_vs_acc()
+    assert()
+    num_samples = 1000
     #batch_nums = [5, 2, 5, 2, 10]
-    #batch_nums = [10, 10, 10]
-    num_samples = 5421*10
+    batch_nums = [10, 10, 10]
+    #num_samples = 5421*10
     #batch_nums = [3, 13, 139, 10]
     #num_samples = 6000*10
     #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
     ortho_at_end = False
-    print('COLLECTING D_TOTAL SUM STATES')
-    for D_total in tqdm(range(16,37,2)):
-        D_encode = D_total
-        D_batch = D_total
-        D_final = D_total
-        D = (D_encode, D_batch, D_final)
+    D_total = 32
+    #print('COLLECTING D_TOTAL SUM STATES')
+    #for D_total in tqdm(range(16,37,2)):
+    D_encode = D_total
+    D_batch = D_total
+    D_final = D_total
+    D = (D_encode, D_batch, D_final)
 
-        data, classifiers, bitstrings = initialise_experiment(
-                    num_samples,
-                    D,
-                    arrangement='one class',
-                    initialise_classifier=True,
-                    prep_sum_states = True,
-                    centre_site = True,
-                    initialise_classifier_settings=([13, 3, 139, 10], False),
-                )
-        mps_images, labels = data
-        classifier, sum_states = classifiers
+    data, classifiers, bitstrings = initialise_experiment(
+                num_samples,
+                D,
+                arrangement='one class',
+                initialise_classifier=True,
+                prep_sum_states = True,
+                centre_site = True,
+                initialise_classifier_settings=(batch_nums, ortho_at_end),
+            )
+    mps_images, labels = data
+    classifier, sum_states = classifiers
 
 
-        path = "Classifiers/mnist_mixed_sum_states/" + f"sum_states_D_total_{D_total}/"
-        os.makedirs(path, exist_ok=True)
-        [save_qtn_classifier(s , "mnist_mixed_sum_states/" + f"sum_states_D_total_{D_total}/" + f"digit_{i}") for i, s in enumerate(sum_states)]
+    #path = "Classifiers/mnist_mixed_sum_states/" + f"sum_states_D_total_{D_total}/"
+    #os.makedirs(path, exist_ok=True)
+    #[save_qtn_classifier(s , "mnist_mixed_sum_states/" + f"sum_states_D_total_{D_total}/" + f"digit_{i}") for i, s in enumerate(sum_states)]
+    #assert()
+    d_batch_vs_acc(bitstrings)
     assert()
-    #d_batch_vs_acc(bitstrings)
     #generate_classifier_images(sum_states)
     #sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in sum_states]
     #sum_states = [sum_state.compress_one_site(D = D_final, orthogonalise = True) for sum_state in sum_states_data]
