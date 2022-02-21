@@ -168,156 +168,6 @@ def all_classes_experiment(mpo_classifier, mps_train, q_hairy_bitstrings, y_trai
         """
     #return accuracies, losses
 
-def svd_classifier(dir, mps_images, labels):
-    def compress_QTN(projected_q_mpo, D, orthogonalise):
-        # ASSUMES q_mpo IS ALREADY PROJECTED ONTO |0> STATE FOR FIRST (n_sites - n_hairysites) SITES
-        # compress procedure leaves mpo in mixed canonical form
-        # center site is at left most hairest site.
-
-        if projected_q_mpo.tensors[-1].shape[1] > 4:
-            return fMPO_to_QTN(
-                QTN_to_fMPO(projected_q_mpo).compress_one_site(
-                    D=D, orthogonalise=orthogonalise
-                )
-            )
-        return fMPO_to_QTN(
-            QTN_to_fMPO(projected_q_mpo).compress(D=D, orthogonalise=orthogonalise)
-        )
-
-    def QTN_to_fMPO(QTN):
-        qtn_data = [site.data for site in QTN.tensors]
-        return fMPO(qtn_data)
-
-    def fMPO_to_QTN(fmpo):
-        fmpo_data = fmpo.data
-        return data_to_QTN(fmpo_data)
-
-    classifier_og = load_qtn_classifier(dir)
-    # print('Original Classifier:', classifier_og)
-
-    # shift all legs to the right. Does not effect performance.
-    classifier_og = fMPO_to_QTN(
-        QTN_to_fMPO(classifier_og).compress_one_site(D=None, orthogonalise=False)
-    )
-
-    hairy_bitstrings_data = create_hairy_bitstrings_data(
-        list(set(labels)), 1, classifier_og.num_tensors, one_site=True
-    )
-    one_site_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, 1, classifier_og.num_tensors, truncated=True
-    )
-
-    predictions_og = classifier_predictions(
-        classifier_og, mps_images, one_site_bitstrings
-    )
-    og_acc = evaluate_classifier_top_k_accuracy(predictions_og, labels, 1)
-    print("Original Classifier Accuracy:", og_acc)
-
-    # print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
-
-    """
-    Shifted, but not orthogonalised
-    """
-    # classifier_shifted = compress_QTN(classifier_og, None, False)
-    # classifier_shifted = fMPO_to_QTN(
-    #    QTN_to_fMPO(classifier_og).compress_one_site(
-    #        D=None, orthogonalise=False
-    #    )
-    # )
-    # print(classifier_shifted)
-
-    # predictions_shifted = classifier_predictions(classifier_shifted, mps_images, one_site_bitstrings)
-    # shifted_acc = evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 1)
-    # print('Shifted Classifier Accuracy:', shifted_acc)
-    # print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
-
-    """
-    Shifted, and orthogonalised
-    """
-    classifier_ortho = compress_QTN(classifier_og, None, True)
-    # print(classifier_ortho)
-
-    predictions_ortho = classifier_predictions(
-        classifier_ortho, mps_images, one_site_bitstrings
-    )
-    ortho_acc = evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 1)
-    print("Orthogonalised Classifier Accuracy:", ortho_acc)
-
-    # print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
-
-    return og_acc, ortho_acc
-
-def deterministic_mpo_classifier_experiment(n_samples,batch_num):
-    D_encode, D_batch, D_final = (32, None, 50)
-
-    """
-    # Load & Organise Data
-    """
-    x_train, y_train, x_test, y_test = load_data(
-        n_samples, shuffle=False, equal_numbers=True
-    )
-    x_train, y_train = arrange_data(x_train, y_train, arrangement="one class")
-
-    """
-    # Create Bitstrings
-    """
-    # All possible class labels
-    possible_labels = list(set(y_train))
-    # Number of "label" sites
-    n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
-    # Number of total sites (mps encoding)
-    n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
-
-    # Create hairy bitstrings
-    hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairysites, n_sites, True
-    )
-    q_hairy_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, n_hairysites, n_sites, truncated=True
-    )
-
-    """
-    # MPS encode data
-    """
-    mps_train = mps_encoding(x_train, D_encode)
-
-    """
-    # Initialise Classifier
-    """
-    accuracies = []
-    from fMPO_reduced import fMPO
-
-    for D_batch in tqdm(range(10, 110, 10)):
-
-        fmpo_classifier = prepare_batched_classifier(
-            mps_train, y_train, D_batch, batch_num, one_site=False
-        )
-
-        data = fMPO(fmpo_classifier.data)
-        classifier_data = data.compress_one_site(
-            D=D_final, orthogonalise=False
-        )
-        mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
-
-        """
-        # Evaluate Classifier
-        """
-        predictions = classifier_predictions(mpo_classifier, mps_train, q_hairy_bitstrings)
-        accuracy = evaluate_classifier_top_k_accuracy(predictions, y_train, 1)
-        accuracies.append(accuracy)
-
-        np.save(f'accuracies_D_final_{D_final}', accuracies)
-
-def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
-    ensemble = prepare_ensemble(n_classifiers, mps_images, labels, D_total = D_total, batch_num = batch_num)
-
-    predictions = ensemble_predictions(ensemble, mps_images, bitstrings)
-    hard_result = evaluate_hard_ensemble_top_k_accuracy(predictions, labels, 1)
-    soft_result = evaluate_soft_ensemble_top_k_accuracy(predictions, labels, 1)
-
-    print('Hard result:', hard_result)
-    print('Soft result:', soft_result)
-
 def d_encode_vs_acc():
     print('SIMULATING TEST ACCURACY VS D_ENCODE')
     #Biggest equal size is n_train = 5329 * 10 with batch_num = 73
@@ -325,21 +175,11 @@ def d_encode_vs_acc():
     num_samples = 5421*10
     #batch_nums = [139, 39, 10]
     batch_nums = [3, 13, 139, 10]
-    #num_samples = 100
-    #batch_num = 10
 
     ortho_at_end = False
     D_batch = 32
 
-    #x_train, y_train, x_test, y_test = load_data(
-    #    100,10000, shuffle=False, equal_numbers=True
-    #)
-
-    #D_test = 32
-    #mps_test = mps_encoding(x_test, D_test)
-
-    accuracies = []
-    for D_encode in tqdm(range(24, 33, 2)):
+    for D_encode in tqdm(range(2, 33, 2)[14:]):
 
         D = (D_encode, D_batch, 32)
         data, classifier, bitstrings = initialise_experiment(
@@ -350,10 +190,9 @@ def d_encode_vs_acc():
                     prep_sum_states = True,
                     centre_site = True,
                     initialise_classifier_settings=([3, 13, 139, 10], ortho_at_end),
-                )
+                    )
         mps_images, labels = data
         _, list_of_classifiers = classifier
-
 
         path = "Classifiers/mnist_mixed_sum_states/" + f"sum_states_D_encode_{D_encode}/"
         os.makedirs(path, exist_ok=True)
@@ -418,6 +257,56 @@ def d_batch_vs_acc(q_hairy_bitstrings):
             accuracies.append(accuracy)
             np.save('results/correct_norm/mnist_non_ortho_d_batch_vs_acc_d_final_10_32_100', accuracies)
         """
+        for D_final in tqdm([10, 32, 100]):
+            sum_states = list_of_classifiers
+
+            classifier_data = adding_batches(sum_states, D_final, 10, orthogonalise = ortho_at_end)[0]
+            classifier = data_to_QTN(classifier_data.data).squeeze()
+
+            predictions = classifier_predictions(classifier, mps_test, bitstrings)
+            accuracy = evaluate_classifier_top_k_accuracy(predictions, y_test, 1)
+
+            accuracies.append(accuracy)
+            np.save('results/correct_norm/mnist_non_ortho_d_encode_vs_acc_d_final_10_32_100_30_32_3', accuracies)
+
+    assert()
+
+def d_batch_vs_acc(q_hairy_bitstrings):
+    print('SIMULATING TEST ACCURACY VS D_BATCH')
+    num_samples = 5421*10
+    batch_nums = [139, 39, 10]
+    final_batch_num = batch_nums.pop(-1)
+
+    ortho_at_end = False
+    D_encode = 32
+    D_test = 32
+
+    x_train, y_train, x_test, y_test = load_data(
+        num_samples,10000, shuffle=False, equal_numbers=True
+    )
+
+    mps_train = mps_encoding(x_train, D_encode)
+    mps_test = mps_encoding(x_test, D_test)
+
+    accuracies = []
+    for D_batch in tqdm(range(2, 33, 2)):
+
+        list_of_classifiers = prepare_batched_classifier(
+            mps_train, y_train, q_hairy_bitstrings, D_batch, batch_nums, True
+        )
+
+        for D_final in tqdm([10, 32, 100]):
+            #print(f'D_final: {D_final}')
+            sum_states = list_of_classifiers
+
+            fmpo_classifier = adding_batches(sum_states, D_final, 10, orthogonalise = ortho_at_end)[0]
+            classifier = data_to_QTN(fmpo_classifier.data).squeeze()
+
+            predictions = classifier_predictions(classifier.squeeze(), mps_test, bitstrings)
+            accuracy = evaluate_classifier_top_k_accuracy(predictions, y_test, 1)
+
+            accuracies.append(accuracy)
+            np.save('results/correct_norm/mnist_non_ortho_d_batch_vs_acc_d_final_10_32_100', accuracies)
 
     assert()
 
@@ -763,6 +652,69 @@ def mps_image_singular_values():
     plt.plot(single_image_singular_values[0][0], label = 'single image')
     plt.title('Digit 0 Singular Values (Center Site)')
     plt.ylabel('Unnormalised Values')
+
+        #shape: num_classes, num_digit_in_class
+        sorted_fMPSs = [[fMPSs[i] for i in range(len(fMPSs)) if labels[i] == l] for l in list(set(labels))]
+
+        flat_fMPSs = [item for sublist in sorted_fMPSs for item in sublist]
+
+        while len(flat_fMPSs) > 10:
+            flat_fMPSs = adding_mps_batches(flat_fMPSs, D, batch_num)
+
+        return flat_fMPSs
+        """
+        sum_states = prepare_batched_classifier(
+            mps_train, y_train, D_batch, batch_num, prep_sum_states
+            )
+
+        sum_states = [data_to_QTN(s.compress_one_site(D=D_batch, orthogonalise = ortho_at_end).data).reindex({'s9':'t9'}) for s in sum_states]
+        """
+
+    def evalulate_sum_states(sum_states, test_data, test_labels):
+        test_fmps = [fMPS([site.data for site in qtn_image.tensors]) for qtn_image in test_data]
+        predictions = [[abs(state.overlap(test)) for state in sum_states] for test in tqdm(test_fmps)]
+        print(evaluate_classifier_top_k_accuracy(predictions, test_labels, 1))
+
+    num_samples = 1000#5329*10
+    D = 32
+    batch_num = 10#73
+
+    x_train, y_train, x_test, y_test = load_data(
+        num_samples, shuffle=False, equal_numbers=True
+    )
+
+    #fmnist = tf.keras.datasets.fashion_mnist
+    #(x_train, y_train), (x_test, y_test) = fmnist.load_data()
+    #test_image = x_train[0].reshape(-1)#.reshape(28,28)[M:28-M,M:28-M].reshape(-1)
+    #num_pixels = test_image.shape[0]
+    #L = int(np.ceil(np.log2(num_pixels)))
+    #padded_image = np.pad(test_image, (0, 2 ** L - num_pixels)).reshape(2 ** (L//2) , 2 ** (L//2))
+    #U, S, V = svd(padded_image)
+    #plt.plot(S)
+    #plt.show()
+
+    #assert()
+    #plt.imshow(test_image)
+    #plt.show()
+    #assert()
+    #test_mps = mps_encoding(x_train[:1], D)
+    #test_singular_values = get_singular_values(*test_mps)
+    #plt.plot(test_singular_values)
+    #plt.show()
+
+    mps_images = mps_encoding(x_train, D)
+    labels = y_train
+
+    #sum_states = get_sum_states(mps_images, labels)
+    batched_sum_states = get_batched_sum_states(mps_images, labels, batch_num, D)
+
+    single_image_sv = get_singular_values(mps_images[0])
+    batched_image_sv = get_singular_values(fMPS_to_QTN(batched_sum_states[0]))
+
+
+    plt.plot(batched_image_sv, label = 'sum state')
+    plt.plot(single_image_sv, label = 'single image')
+    plt.ylabel('Normalised Values')
     plt.xlabel('Singular Value i')
     plt.legend()
     plt.savefig('zeros_digit_sing_vals.pdf')
@@ -1086,8 +1038,3 @@ if __name__ == "__main__":
     #sum_state_predictions = [[abs(mps_image.H.squeeze() @ s.squeeze()) for s in sum_states] for mps_image in tqdm(mps_images)]
     #print(evaluate_classifier_top_k_accuracy(sum_state_predictions, labels, 1))
     #assert()
-
-    predictions = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_images)])
-    print(evaluate_classifier_top_k_accuracy(predictions, labels, 1))
-
-    assert()
