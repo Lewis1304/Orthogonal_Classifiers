@@ -391,7 +391,7 @@ def d_batch_vs_acc(q_hairy_bitstrings):
     #mps_test = mps_encoding(x_test, D_test)
 
     accuracies = []
-    for D_batch in tqdm(range(2, 33, 2)):
+    for D_batch in tqdm(range(26, 33, 2)):
 
         list_of_classifiers = prepare_centred_batched_classifier(
             mps_train, y_train, q_hairy_bitstrings, D_batch, batch_nums
@@ -1020,41 +1020,39 @@ def add_centre_sublist(*args):
 
 if __name__ == "__main__":
     #single_image_sv, sum_state_sv = mps_image_singular_values()
-    d_encode_vs_acc()
-    assert()
-    num_samples = 1000
+    #num_samples = 1000
     #batch_nums = [5, 2, 5, 2, 10]
-    batch_nums = [10, 10, 10]
-    #num_samples = 5421*10
-    #batch_nums = [3, 13, 139, 10]
+    #batch_nums = [10, 10, 10]
+    num_samples = 5421*10
+    batch_nums = [3, 13, 139, 10]
     #num_samples = 6000*10
     #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
     ortho_at_end = False
     D_total = 32
     #print('COLLECTING D_TOTAL SUM STATES')
-    #for D_total in tqdm(range(16,37,2)):
-    D_encode = D_total
-    D_batch = D_total
-    D_final = D_total
-    D = (D_encode, D_batch, D_final)
+    for D_total in tqdm(range(2,18,2)):
+        D_encode = D_total
+        D_batch = D_total
+        D_final = D_total
+        D = (D_encode, D_batch, D_final)
 
-    data, classifiers, bitstrings = initialise_experiment(
-                num_samples,
-                D,
-                arrangement='one class',
-                initialise_classifier=True,
-                prep_sum_states = True,
-                centre_site = True,
-                initialise_classifier_settings=(batch_nums, ortho_at_end),
-            )
-    mps_images, labels = data
-    classifier, sum_states = classifiers
+        data, classifiers, bitstrings = initialise_experiment(
+                    num_samples,
+                    D,
+                    arrangement='one class',
+                    initialise_classifier=True,
+                    prep_sum_states = True,
+                    centre_site = True,
+                    initialise_classifier_settings=([3, 13, 139, 10], ortho_at_end),
+                )
+        mps_images, labels = data
+        classifier, sum_states = classifiers
 
 
-    #path = "Classifiers/mnist_mixed_sum_states/" + f"sum_states_D_total_{D_total}/"
-    #os.makedirs(path, exist_ok=True)
-    #[save_qtn_classifier(s , "mnist_mixed_sum_states/" + f"sum_states_D_total_{D_total}/" + f"digit_{i}") for i, s in enumerate(sum_states)]
-    #assert()
+        path = "Classifiers/mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{D_total}/"
+        os.makedirs(path, exist_ok=True)
+        [save_qtn_classifier(s , "mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{D_total}/" + f"digit_{i}") for i, s in enumerate(sum_states)]
+    assert()
     d_batch_vs_acc(bitstrings)
     assert()
     #generate_classifier_images(sum_states)
