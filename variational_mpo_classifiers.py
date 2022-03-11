@@ -22,7 +22,7 @@ from collections import Counter
 
 from oset import oset
 from xmps.fMPS import fMPS
-from fMPO_reduced import fMPO
+from fMPO import fMPO
 from tools import *
 
 """

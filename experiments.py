@@ -109,11 +109,7 @@ def initialise_experiment(n_samples, D, arrangement="one class", initialise_clas
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
 
 """
-Experiments
-"""
-
-"""
-Get sum states
+Get sum states experiments
 """
 
 def D_total_experiment():

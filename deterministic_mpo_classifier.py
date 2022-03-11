@@ -2,7 +2,7 @@ import numpy as np
 from functools import reduce
 from xmps.fMPS import fMPS
 from tqdm import tqdm
-from fMPO_reduced import fMPO
+from fMPO import fMPO
 from tools import load_data, data_to_QTN, arrange_data, shuffle_arranged_data
 from variational_mpo_classifiers import (
     evaluate_classifier_top_k_accuracy,
