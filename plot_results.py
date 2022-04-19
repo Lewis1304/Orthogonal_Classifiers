@@ -1,5 +1,8 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from tools import load_data, load_qtn_classifier, data_to_QTN
+from experiments import create_experiment_bitstrings, adding_centre_batches
+from fMPO import fMPO
 
 """
 Plot D experiments
@@ -150,12 +153,6 @@ def acc_vs_d_encode_d_batch_d_final():
         non_ortho_test_accuracies.append(non_ortho_test_accuracy)
         ortho_test_accuracies.append(ortho_test_accuracy)
 
-
-
-    x = range(2, 33, 2)
-    plt.plot(x, non_ortho_test_accuracies[1])
-    plt.show()
-    assert()
     #fig, axs = plt.subplots(2)
     fig = plt.figure()
     gs = fig.add_gridspec(2, hspace=0.3)
@@ -269,23 +266,24 @@ def compute_predictions_confusion_matrix(bitstrings, rearrange = False):
     PLOT RESULTS
     """
 
+    mnist_results = np.array(mnist_results).reshape(10,10)
+    fashion_mnist_results = np.array(fashion_mnist_results).reshape(10,10)
+
     if rearrange:
-        mnist_results = np.sort(mnist_results, axis = 0)
-        fashion_mnist_results = np.sort(fashion_mnist_results, axis = 0)
 
-    """
-    for i in range(10):
-        plt.plot(fashion_mnist_results[:,i][::-1], label = f'sum state {i+1}')
+        rearranged_mnist_results = np.zeros_like(mnist_results)
+        rearranged_fashion_mnist_results = np.zeros_like(fashion_mnist_results)
+        inds = diagonal_indices(rearranged_mnist_results.shape[0])
 
-    plt.title('FASHION MNIST Sum State Index Magnitude')
-    plt.ylabel('Value')
-    plt.xlabel('Elements sorted from largest to smallest')
-    plt.xticks(range(10))
-    plt.savefig('fashion_mnist_sorted_sum_states_prediction_magnitude')
-    plt.show()
-    assert()
-    plt.figure()
-    """
+        mnist_results = np.sort(mnist_results.flatten(), axis = 0)[::-1]
+        fashion_mnist_results = np.sort(fashion_mnist_results.flatten(), axis = 0)[::-1]
+
+        for i, j, k in zip(inds, mnist_results, fashion_mnist_results):
+            rearranged_mnist_results[i[0],i[1]] = j
+            rearranged_fashion_mnist_results[i[0],i[1]] = k
+
+        mnist_results = rearranged_mnist_results
+        fashion_mnist_results = rearranged_fashion_mnist_results
 
     #subplot(r,c) provide the no. of rows and columns
     f, axarr = plt.subplots(1,2)
@@ -293,19 +291,30 @@ def compute_predictions_confusion_matrix(bitstrings, rearrange = False):
     axarr[1].imshow(fashion_mnist_results, cmap = 'Greys')
     axarr[0].set_title('MNIST')
     axarr[1].set_title('FASHION MNIST')
-    axarr[0].set_xticks(range(10))
-    axarr[0].set_yticks(range(10))
-    #axarr[0].set_yticks([])
-    axarr[0].set_xlabel('Prediction of sum state i')
-    axarr[0].set_ylabel('Sorted index of sum state i')
-    #axarr[0].set_ylabel('Rearranged Prediction Index')
-    axarr[1].set_xticks(range(10))
-    axarr[1].set_yticks(range(10))
-    #axarr[1].set_yticks([])
-    axarr[1].set_xlabel('Prediction of sum state i')
-    axarr[1].set_ylabel('Prediction Index')
-    #axarr[1].set_ylabel('Rearranged Prediction Index')
-    #plt.savefig('figures/sum_state_predictions_confusion_matrix.pdf')
+
+    if rearrange:
+        axarr[0].set_xticks([])
+        axarr[1].set_xticks([])
+        axarr[0].set_yticks([])
+        axarr[1].set_yticks([])
+        plt.suptitle('Rearranged Elements of Psuedo-Sum States')
+
+    else:
+        axarr[0].set_xticks(range(10))
+        axarr[1].set_xticks(range(10))
+        axarr[0].set_yticks(range(10))
+        axarr[1].set_yticks(range(10))
+
+        axarr[0].set_xlabel('Prediction of sum state i')
+        axarr[0].set_ylabel('Sorted index of sum state i')
+        axarr[1].set_xlabel('Prediction of sum state i')
+        axarr[1].set_ylabel('Prediction Index')
+
+    #if rearrange:
+    #    plt.savefig('figures/rearranged_sum_state_predictions_confusion_matrix.pdf')
+    #else:
+    #    plt.savefig('figures/sum_state_predictions_confusion_matrix.pdf')
+
     plt.show()
 
 def compute_sum_state_confusion_matrix(bitstrings, rearrange = False):
@@ -370,9 +379,27 @@ def compute_sum_state_confusion_matrix(bitstrings, rearrange = False):
     fashion_mnist_results = np.array(fashion_mnist_results).reshape(10,10)
 
     if rearrange:
-        mnist_results = np.sort(mnist_results, axis = 0)
-        fashion_mnist_results = np.sort(fashion_mnist_results, axis = 0)
 
+        mnist_results = np.array([np.roll(i, -k) for k, i in enumerate(mnist_results)]).T
+
+        #print(mnist_results[:,0])
+        #print(np.roll(mnist_results[:,0], 1))
+        #assert()
+        """
+        rearranged_mnist_results = np.zeros_like(mnist_results)
+        rearranged_fashion_mnist_results = np.zeros_like(fashion_mnist_results)
+        inds = diagonal_indices(rearranged_mnist_results.shape[0])
+
+        mnist_results = np.sort(mnist_results.flatten(), axis = 0)[::-1]
+        fashion_mnist_results = np.sort(fashion_mnist_results.flatten(), axis = 0)[::-1]
+
+        for i, j, k in zip(inds, mnist_results, fashion_mnist_results):
+            rearranged_mnist_results[i[0],i[1]] = j
+            rearranged_fashion_mnist_results[i[0],i[1]] = k
+
+        mnist_results = rearranged_mnist_results
+        fashion_mnist_results = rearranged_fashion_mnist_results
+        """
     plt.figure()
 
     #subplot(r,c) provide the no. of rows and columns
@@ -381,22 +408,401 @@ def compute_sum_state_confusion_matrix(bitstrings, rearrange = False):
     axarr[1].imshow(fashion_mnist_results, cmap = 'Greys')
     axarr[0].set_title('MNIST')
     axarr[1].set_title('FASHION MNIST')
-    axarr[0].set_xticks(range(10))
-    axarr[0].set_yticks(range(10))
-    #axarr[0].set_yticks([])
-    axarr[0].set_xlabel('Sum state i')
-    axarr[0].set_ylabel('Sum state j')
-    #axarr[0].set_ylabel('Rearranged overlap with sum state j')
-    axarr[1].set_xticks(range(10))
-    axarr[1].set_yticks(range(10))
-    #axarr[1].set_yticks([])
-    axarr[1].set_xlabel('Sum state i')
-    axarr[1].set_ylabel('Sum state j')
-    #axarr[1].set_ylabel('Rearranged overlap with sum state j')
 
-    plt.savefig('figures/sum_state_confusion_matrix.pdf')
+    if rearrange:
+        axarr[0].set_xticks([])
+        axarr[1].set_xticks([])
+        axarr[0].set_yticks([])
+        axarr[1].set_yticks([])
+        plt.suptitle('Rearranged Psuedo-Sum State Overlaps')
+    else:
+        axarr[0].set_xticks(range(10))
+        axarr[1].set_xticks(range(10))
+        axarr[0].set_yticks(range(10))
+        axarr[1].set_yticks(range(10))
+
+        axarr[0].set_xlabel('Sum state i')
+        axarr[1].set_xlabel('Sum state i')
+        axarr[0].set_ylabel('Sum state j')
+        axarr[1].set_ylabel('Sum state j')
+
+    #if rearrange:
+    #    plt.savefig('figures/rearranged_sum_state_confusion_matrix.pdf')
+    #else:
+    #    plt.savefig('figures/sum_state_confusion_matrix.pdf')
+
     plt.show()
 
+def diagonal_indices(n):
+    """
+    param: n: Dimension of matrix. 1-indexed
+    Rearranges along the diagonal. Alternating between each side.
+    Its janky but it works!
+    """
+
+    a = [[i, i] for i in range(n)]
+    for j in range(1,n):
+        inds = [str(i) + str(i+j) for i in range(n-j)]
+        a = a + list(np.array([[[int(i[0]), int(i[1])], [int(i[1]), int(i[0])]] for i in inds]).reshape(-1, 2))
+
+    return np.array(a)
+
+def test_rearrangement(bitstrings):
+
+    """
+    MNIST
+    """
+    mnist_path = "mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_32/"
+
+    mnist_sum_states = [load_qtn_classifier(mnist_path + f"digit_{i}") for i in range(10)]
+    mnist_mps_sum_states = [s @ b for s, b in zip(mnist_sum_states, bitstrings)]
+
+    mnist_sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in mnist_sum_states]
+    mnist_ortho_classifier_data = adding_centre_batches(mnist_sum_states_data, 32, 10, orthogonalise = True)[0]
+    mnist_ortho_mpo_classifier = data_to_QTN(mnist_ortho_classifier_data.data).squeeze()
+
+    #Has shape (Class, Class_prediction)
+    for i in mnist_mps_sum_states:
+        state_i = (mnist_ortho_mpo_classifier @ i).squeeze()
+        state_i /= state_i.norm()
+
+    mnist_results = []
+    for i in mnist_mps_sum_states:
+        for j in mnist_mps_sum_states:
+            if i == j:
+                mnist_results.append(i.H @ j)
+            else:
+                mnist_results.append((i.H @ j).norm())
+
+
+    """
+    FASHION MNIST
+    """
+    fashion_mnist_path = "fashion_mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_32/"
+
+    fashion_mnist_sum_states = [load_qtn_classifier(fashion_mnist_path + f"digit_{i}") for i in range(10)]
+    fashion_mnist_mps_sum_states = [s @ b for s, b in zip(fashion_mnist_sum_states, bitstrings)]
+
+    fashion_mnist_sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in fashion_mnist_sum_states]
+    fashion_mnist_ortho_classifier_data = adding_centre_batches(fashion_mnist_sum_states_data, 32, 10, orthogonalise = True)[0]
+    fashion_mnist_ortho_mpo_classifier = data_to_QTN(fashion_mnist_ortho_classifier_data.data).squeeze()
+
+    #Has shape (Class, Class_prediction)
+    fashion_mnist_results = []
+    for i in fashion_mnist_mps_sum_states:
+        state_i = (fashion_mnist_ortho_mpo_classifier @ i).squeeze()
+        state_i /= state_i.norm()
+
+    fashion_mnist_results = []
+    for i in fashion_mnist_mps_sum_states:
+        for j in fashion_mnist_mps_sum_states:
+            if i == j:
+                fashion_mnist_results.append(i.H @ j)
+            else:
+                fashion_mnist_results.append((i.H @ j).norm())
+    """
+    PLOT RESULTS
+    """
+    from scipy.optimize import linear_sum_assignment
+
+    mnist_results = np.array(mnist_results).reshape(10,10)
+    #fashion_mnist_results = np.array(fashion_mnist_results).reshape(10,10)
+
+    """
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import reverse_cuthill_mckee
+
+    s_results = np.zeros_like(mnist_results)
+    for i in range(len(mnist_results)):
+        for j in range(len(mnist_results)):
+                if i == j:
+                    continue
+                else:
+                    s_results[i,j] = mnist_results[i,j]
+
+
+    graph = csr_matrix(s_results)
+
+    inds = reverse_cuthill_mckee(graph, symmetric_mode = True)
+    rearranged_mnist_results = mnist_results[inds]
+
+    plt.imshow(rearranged_mnist_results, cmap = 'Greys')
+    plt.show()
+    assert()
+    """
+    #masked_results = fashion_mnist_results.copy()
+    #for i in range(len(masked_results)):
+    #    masked_results[i,i] = 0
+
+    #row_ind, col_ind = linear_sum_assignment(masked_results, maximize = True)
+
+    #ixgrid = np.ix_(row_ind, col_ind)
+    #rearranged_fashion_mnist_results = fashion_mnist_results[ixgrid].T
+
+    rearranged_mnist_results = [] #np.array([np.roll(i, -k) for k, i in enumerate(mnist_results)]).T
+    rolling_inds = [4,3,2,1,0,-1,-2,-3,-4, -5]
+    for i, j in zip(rolling_inds, mnist_results):
+        rearranged_mnist_results.append(np.roll(j, i))
+
+    rearranged_mnist_results = np.array(rearranged_mnist_results).T
+
+    #subplot(r,c) provide the no. of rows and columns
+    f, axarr = plt.subplots(2,5)
+    z = 0
+    for i in range(2):
+        for j in range(5):
+            results = np.array([np.roll(k,-z) for k in rearranged_mnist_results])
+
+            results_rearranged = np.array([np.roll(q,-p) for q,p in zip(results.T, rolling_inds)])
+
+
+            axarr[i,j].imshow(results_rearranged, cmap = 'Greys')
+            axarr[i,j].set_xticks([])
+            axarr[i,j].set_yticks([])
+            z += 1
+            axarr[i,j].set_title(f'{z}')
+            #axarr[1].imshow(rearranged_mnist_results, cmap = 'Greys')
+            #axarr[0].set_title('MNIST')
+            #axarr[1].set_title('CYCLIC REARRANGED MNIST')
+
+            #axarr[0].set_xticks([])
+            #axarr[1].set_xticks([])
+            #axarr[0].set_yticks([])
+            #axarr[1].set_yticks([])
+    plt.suptitle('MNIST Rearranged Psuedo-Sum State Overlaps')
+    #plt.savefig('figures/mnist_rearranged_sum_state_confusion_matrix.pdf')
+    #if rearrange:
+    #    plt.savefig('figures/rearranged_sum_state_confusion_matrix.pdf')
+    #else:
+    #    plt.savefig('figures/sum_state_confusion_matrix.pdf')
+    plt.tight_layout()
+    plt.show()
+
+def test_rearrangement_2(bitstrings):
+
+    """
+    MNIST
+    """
+    mnist_path = "mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_32/"
+
+    mnist_sum_states = [load_qtn_classifier(mnist_path + f"digit_{i}") for i in range(10)]
+    mnist_mps_sum_states = [s @ b for s, b in zip(mnist_sum_states, bitstrings)]
+
+    mnist_sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in mnist_sum_states]
+    mnist_ortho_classifier_data = adding_centre_batches(mnist_sum_states_data, 32, 10, orthogonalise = True)[0]
+    mnist_ortho_mpo_classifier = data_to_QTN(mnist_ortho_classifier_data.data).squeeze()
+
+    #Has shape (Class, Class_prediction)
+    for i in mnist_mps_sum_states:
+        state_i = (mnist_ortho_mpo_classifier @ i).squeeze()
+        state_i /= state_i.norm()
+
+    mnist_results = []
+    for i in mnist_mps_sum_states:
+        for j in mnist_mps_sum_states:
+            if i == j:
+                mnist_results.append(i.H @ j)
+            else:
+                mnist_results.append((i.H @ j).norm())
+
+    """
+    FASHION MNIST
+    """
+    fashion_mnist_path = "fashion_mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_32/"
+
+    fashion_mnist_sum_states = [load_qtn_classifier(fashion_mnist_path + f"digit_{i}") for i in range(10)]
+    fashion_mnist_mps_sum_states = [s @ b for s, b in zip(fashion_mnist_sum_states, bitstrings)]
+
+    fashion_mnist_sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in fashion_mnist_sum_states]
+    fashion_mnist_ortho_classifier_data = adding_centre_batches(fashion_mnist_sum_states_data, 32, 10, orthogonalise = True)[0]
+    fashion_mnist_ortho_mpo_classifier = data_to_QTN(fashion_mnist_ortho_classifier_data.data).squeeze()
+
+    #Has shape (Class, Class_prediction)
+    fashion_mnist_results = []
+    for i in fashion_mnist_mps_sum_states:
+        state_i = (fashion_mnist_ortho_mpo_classifier @ i).squeeze()
+        state_i /= state_i.norm()
+
+    fashion_mnist_results = []
+    for i in fashion_mnist_mps_sum_states:
+        for j in fashion_mnist_mps_sum_states:
+            if i == j:
+                fashion_mnist_results.append(i.H @ j)
+            else:
+                fashion_mnist_results.append((i.H @ j).norm())
+
+    """
+    REARRANGE
+    """
+    mnist_results = np.array(mnist_results).reshape(10,10)
+    #f_mnist_results = np.array(fashion_mnist_results).reshape(10,10)
+
+
+    #a_fmnist = np.roll([7,5,9,8,2,4,6,0,3,1], 0)
+
+    def brute_force_permutations(results):
+        #Create weight matrix
+        W = np.eye(10)
+        for k, i in enumerate(np.arange(0.9, 0.0, -0.1)):
+            stripe = [i for _ in range(10-(k+1))]
+            W += np.diag(stripe, k+1)
+            W += np.diag(stripe, -(k+1))
+
+        from itertools import permutations
+        #Brute force method.
+        #Use weight matrix to determine how "diagonal" a matrix is
+        perms = []
+        norms = []
+        i = 0
+        for p in permutations(range(10)):
+            rearranged_results = np.array([row[[p]] for row in results[[p]]])
+
+            norms.append(np.linalg.norm((rearranged_results - W)))
+            perms.append(p)
+
+            #assert i == 2
+            if i % 100:
+                print(f'{i+1} out of {3628800}')
+            i += 1
+
+        np.save('permutations', perms)
+        np.save('norms', norms)
+
+    def load_brute_force_permutations(max_perm):
+        norms = np.load('norms.npy')
+        permutations = np.load('permutations.npy')
+
+        best_norm_inds = np.argsort(norms)
+        best_permutations = permutations[best_norm_inds]
+
+        return best_permutations[:max_perm]
+
+    #a_mnist = [2,4,6,0,8,3,1,9,5,7]
+    #a_fmnist = np.roll([7,5,9,8,2,4,6,0,3,1], 0)
+    #brute_force_permutations(mnist_results)
+
+
+    """
+    rearranged_results = []
+    for row in mnist_results[a_mnist]:
+        rearranged_results.append(row[a_mnist])
+    mnist_rearranged_results = np.array(rearranged_results)
+    rearranged_results = []
+    for row in results:
+        rearranged_results.append(np.argsort(row))
+    r = np.array(rearranged_results).T
+    print(r)
+    assert()
+    """
+
+
+
+    """
+    rearranged_results = []
+    for row in f_mnist_results[a_fmnist]:
+        rearranged_results.append(row[a_fmnist])
+    f_mnist_rearranged_results = np.array(rearranged_results)
+    """
+
+
+    f, axarr = plt.subplots(2,2)
+
+    best_permutations = load_brute_force_permutations(100)
+    best_permutations = [''.join(str(e) for e in i) for i in best_permutations]
+
+    def createLenList(n,LL):
+        stubs = {}
+        for l in LL:
+          for i,e in enumerate(l):
+              stub = l[i:i+n]
+              if len(stub) == n:
+                 if stub not in stubs: stubs[stub]  = 1
+                 else:                 stubs[stub] += 1
+
+        return {k: stubs[k] for k in sorted(stubs, key=stubs.get, reverse=True)}
+
+    i = 0
+    for j in range(2):
+        for k in range(2):
+            maxStub =  createLenList(i+2,best_permutations)
+            axarr[j,k].bar(list(maxStub.keys())[:20], list(maxStub.values())[:20])
+            axarr[j,k].tick_params(axis='x', labelrotation=90)
+            axarr[j,k].set_title(f'Size:{i+2}')
+            axarr[j,k].set_ylabel('Count')
+            i += 1
+    plt.suptitle('MNIST:\n Most common groups of labels out of 100 most diagonal permutations')
+    plt.tight_layout()
+    plt.savefig('mnist_most_common_label_groups.pdf')
+    plt.show()
+
+    assert()
+
+
+
+
+    f, axarr = plt.subplots(2,5)
+    best_permutations = load_brute_force_permutations(100)
+
+    z = 0
+    for i in range(2):
+        for j in range(5):
+            axarr[i,j].imshow([row[best_permutations[z]] for row in mnist_results[best_permutations[z]]], cmap = 'Greys')
+            axarr[i,j].set_xticks(range(10))
+            axarr[i,j].set_yticks(range(10))
+            axarr[i,j].set_xticklabels(best_permutations[z])
+            axarr[i,j].set_yticklabels(best_permutations[z])
+
+            z += 1
+    plt.suptitle('MNIST: Top 10 most diagonal permutations')
+    plt.tight_layout()
+    plt.savefig('mnist_top_10_diagonal_permutations.pdf')
+    plt.show()
+    assert()
+
+    """
+    axarr[0,0].imshow(mnist_results, cmap = "Greys")
+    axarr[0,1].imshow(mnist_rearranged_results.T, cmap = "Greys")
+    axarr[0, 0].set_title('MNIST RESULTS')
+    axarr[0, 1].set_title('MNIST REARRANGED RESULTS')
+    axarr[0, 0].set_xticks(range(10))
+    axarr[0, 1].set_xticks(range(10))
+    axarr[0, 0].set_yticks(range(10))
+    axarr[0, 1].set_yticks(range(10))
+
+    axarr[0, 0].set_xticklabels(range(10))
+    axarr[0, 1].set_xticklabels(a_mnist)
+    axarr[0, 0].set_yticklabels(range(10))
+    axarr[0, 1].set_yticklabels(a_mnist)
+
+    """
+    """
+    rearranged_results = []
+    for row in results:
+        rearranged_results.append(np.argsort(row))
+    r = np.array(rearranged_results).T
+    print(r)
+    assert()
+    """
+
+
+    axarr[0].imshow(f_mnist_results, cmap = "Greys")
+    axarr[1].imshow(f_mnist_rearranged_results.T, cmap = "Greys")
+    axarr[0].set_title('FASHION MNIST RESULTS')
+    axarr[1].set_title('FASHION MNIST REARRANGED RESULTS')
+    axarr[0].set_xticks(range(10))
+    axarr[1].set_xticks(range(10))
+    axarr[0].set_yticks(range(10))
+    axarr[1].set_yticks(range(10))
+
+    axarr[0].set_xticklabels(range(10))
+    axarr[1].set_xticklabels(a_fmnist)
+    axarr[0].set_yticklabels(range(10))
+    axarr[1].set_yticklabels(a_fmnist)
+
+    plt.tight_layout()
+    #plt.savefig('rearranged_psuedo_sum_states.pdf')
+    plt.show()
+    assert()
 
 if __name__ == '__main__':
     x_train, y_train, x_test, y_test = load_data(
@@ -405,4 +811,4 @@ if __name__ == '__main__':
     bitstrings = create_experiment_bitstrings(x_train, y_train)
 
     #compute_predictions_confusion_matrix(bitstrings, rearrange = True)
-    compute_sum_state_confusion_matrix(bitstrings, rearrange = False)
+    test_rearrangement_2(bitstrings)
