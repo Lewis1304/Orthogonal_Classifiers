@@ -23,8 +23,8 @@ Data tools
 
 
 def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False):
-    mnist = tf.keras.datasets.fashion_mnist
-    #mnist = tf.keras.datasets.mnist
+    #mnist = tf.keras.datasets.fashion_mnist
+    mnist = tf.keras.datasets.mnist
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
 
     if shuffle:

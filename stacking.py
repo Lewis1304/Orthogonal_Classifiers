@@ -1,17 +1,13 @@
-import quimb as qu
-import quimb.tensor as qtn
 from xmps.svd_robust import svd
 from scipy.linalg import polar
 import numpy as np
 from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, classifier_predictions
-from deterministic_mpo_classifier import unitary_extension
-import autograd.numpy as anp
-import tensorflow as tf
+from plot_results import produce_psuedo_sum_states, load_brute_force_permutations
+from tools import load_data
 from scipy import sparse
 import qutip
-
-
-from tools import load_data, arrange_data
+import matplotlib.pyplot as plt
+from experiments import create_experiment_bitstrings
 
 
 from tqdm import tqdm
@@ -108,64 +104,68 @@ def partial_trace(rho, qubit_2_keep):
         rho = qutip.Qobj(rho, dims = [[2] * num_qubit ,[1]])
         return rho.ptrace(qubit_2_keep)
 
-def evaluate_stacking_unitary(U, partial = False):
+def evaluate_stacking_unitary(U, partial = False, dataset = 'fashion_mnist', training = False):
     """
     Evaluate Performance
     """
     n_copies = int(np.log2(U.shape[0])//4)-1
 
-    """
-    Load Training Data
-    """
-    initial_label_qubits = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
-    y_train = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
-    """
-    Rearrange test data to match new bitstring assignment
-    """
-    if partial:
-        possible_labels = [5,7,8,9,4,0,6,1,2,3]
-        assignment = possible_labels + list(range(10,16))
-        reassigned_preds = np.array([i[assignment] for i in initial_label_qubits])
-        reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in reassigned_preds])
-    else:
-        reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+    if training:
+        """
+        Load Training Data
+        """
 
-    outer_ket_states = reassigned_preds
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, reassigned_preds)])
+        initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+        y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
 
-    """
-    Perform Overlaps
-    """
-    #We want qubit formation:
-    #|l_0^0>|l_1^0>|l_0^1>|l_1^1> |l_2^0>|l_3^0>|l_2^1>|l_3^1>...
-    #I.e. act only on first 2 qubits on all copies.
-    #Since unitary is contructed on first 2 qubits of each copy.
-    #So we want U @ SWAP @ |copy_preds>
-    print('Performing Overlaps!')
-    preds_U = np.array([abs(U.dot(i)) for i in tqdm(outer_ket_states)])
+        """
+        Rearrange test data to match new bitstring assignment
+        """
+        if partial:
+            possible_labels = [5,7,8,9,4,0,6,1,2,3]
+            assignment = possible_labels + list(range(10,16))
+            reassigned_preds = np.array([i[assignment] for i in initial_label_qubits])
+            reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in reassigned_preds])
+        else:
+            reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
 
-    """
-    Trace out other qubits/copies
-    """
-    print('Performing Partial Trace!')
-    preds_U = np.array([np.diag(partial_trace(i, [0,1,2,3])) for i in tqdm(preds_U)])
+        outer_ket_states = reassigned_preds
+        #.shape = n_train, dim_l**n_copies+1
+        for k in range(n_copies):
+            outer_ket_states = [np.kron(i, j) for i,j in zip(outer_ket_states, reassigned_preds)]
 
-    #Rearrange to 0,1,2,3,.. formation. This is req. for evaluate_classifier
-    if partial:
-        preds_U = np.array([i[assignment] for i in preds_U])
-    training_predictions = evaluate_classifier_top_k_accuracy(preds_U, y_train, 1)
-    print()
-    print('Training accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
-    print('Training accuracy U:', training_predictions)
-    print()
+        """
+        Perform Overlaps
+        """
+        #We want qubit formation:
+        #|l_0^0>|l_1^0>|l_0^1>|l_1^1> |l_2^0>|l_3^0>|l_2^1>|l_3^1>...
+        #I.e. act only on first 2 qubits on all copies.
+        #Since unitary is contructed on first 2 qubits of each copy.
+        #So we want U @ SWAP @ |copy_preds>
+        print('Performing Overlaps!')
+        preds_U = np.array([abs(U.dot(i)) for i in tqdm(outer_ket_states)])
+
+        """
+        Trace out other qubits/copies
+        """
+
+        print('Performing Partial Trace!')
+        preds_U = np.array([np.diag(partial_trace(i, [0,1,2,3])) for i in tqdm(preds_U)])
+
+        #Rearrange to 0,1,2,3,.. formation. This is req. for evaluate_classifier
+        if partial:
+            preds_U = np.array([i[assignment] for i in preds_U])
+        training_predictions = evaluate_classifier_top_k_accuracy(preds_U, y_train, 1)
+        print()
+        print('Training accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
+        print('Training accuracy U:', training_predictions)
+        print()
 
     """
     Load Test Data
     """
-    initial_label_qubits = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions.npy')[15].astype(np.float32)
-    y_test = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions_labels.npy').astype(np.float32)
+    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions.npy')[15]#.astype(np.float32)
+    y_test = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions_labels.npy')#.astype(np.float32)
 
     """
     Rearrange test data to match new bitstring assignment
@@ -181,7 +181,7 @@ def evaluate_stacking_unitary(U, partial = False):
     outer_ket_states = reassigned_preds
     #.shape = n_train, dim_l**n_copies+1
     for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, reassigned_preds)])
+        outer_ket_states = [np.kron(i, j) for i,j in zip(outer_ket_states, reassigned_preds)]
 
     """
     Perform Overlaps
@@ -210,13 +210,14 @@ def evaluate_stacking_unitary(U, partial = False):
     print('Test accuracy U:', test_predictions)
     print()
 
-    return training_predictions, test_predictions
+    return None, test_predictions
 
-def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
+def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, dataset = 'fashion_mnist'):
     from numpy import linalg as LA
+    print('Dataset: ', dataset)
 
-    initial_label_qubits = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
-    y_train = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
+    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
+    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
     initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
 
     possible_labels = list(set(y_train))
@@ -244,7 +245,6 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
 
         #print('Performing SVD!')
         U, S = svd(weighted_outer_states)[:2]
-
         if v_col:
             #a = b = 16**n (using andrew's defn)
             a, b = U.shape
@@ -270,6 +270,37 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
     #np.save('V', V)
     print('Performing Polar Decomposition!')
     U = polar(V)[0]
+    print('Finished Computing Stacking Unitary!')
+    return U.astype(np.float32)
+
+def sum_state_deterministic_quantum_stacking(n_copies, v_col = True, dataset = 'fashion_mnist'):
+    from numpy import linalg as LA
+    print('Dataset: ', dataset)
+
+    initial_label_qubits = produce_psuedo_sum_states(dataset)
+    y_train = range(10)
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+
+    possible_labels = list(set(y_train))
+
+    dim_l = initial_label_qubits.shape[1]
+    outer_ket_states = initial_label_qubits
+
+    dim_lc = dim_l ** (1 + n_copies)
+
+    weighted_outer_states = np.zeros((dim_lc, dim_lc))
+    for l in tqdm(possible_labels):
+        for i in tqdm(initial_label_qubits[y_train == l]):
+            ket = i
+
+            for k in range(n_copies):
+                ket = np.kron(ket, i)
+
+            outer = np.outer(np.kron(bitstrings[l].squeeze().tensors[5].data, np.eye(dim_lc//16)[0]), ket)
+            weighted_outer_states += outer
+    print('Performing Polar Decomposition!')
+    U = polar(weighted_outer_states)[0]
+    print('Finished Computing Stacking Unitary!')
     return U.astype(np.float32)
 
 def specific_quantum_stacking(n_copies, v_col = False):
@@ -278,8 +309,8 @@ def specific_quantum_stacking(n_copies, v_col = False):
     """
     Load Data
     """
-    initial_label_qubits = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
-    y_train = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
+    initial_label_qubits = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+    y_train = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
     initial_label_qubits = [i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits]
 
     """
@@ -339,6 +370,8 @@ def specific_quantum_stacking(n_copies, v_col = False):
 
     print('Performing Polar Decomposition!')
     U = polar(V)[0]
+    U = U.astype(np.float32)
+
 
     """
     Add conditionals and apply unitary to correct qubits via cirq (qiskit is slow af)
@@ -383,7 +416,6 @@ def specific_quantum_stacking(n_copies, v_col = False):
                 result += swap_gate
         return result
 
-    U = U.astype(np.float32)
     I = np.eye(4**(n_copies + 1), dtype = U.dtype)
     U_circ = sparse.kron(np.outer(I[0],I[0]), U)
     for i in tqdm(I[1:]):
@@ -398,14 +430,196 @@ def specific_quantum_stacking(n_copies, v_col = False):
 
     return U_circ.astype(np.float32)
 
+def stacking_on_confusion_matrix(max_copies, dataset = 'fashion_mnist'):
+
+    initial_label_qubits = produce_psuedo_sum_states(dataset)
+    permutation = load_brute_force_permutations(10,dataset)[1]
+
+    rearranged_results = []
+    for row in initial_label_qubits[permutation]:
+        rearranged_results.append(row[permutation])
+    rearranged_results = np.array(rearranged_results)
+
+    total_results = []
+    total_results.append(rearranged_results)
+    f, axarr = plt.subplots(1,max_copies + 2)
+    axarr[0].imshow(rearranged_results, cmap = "Greys")
+    axarr[0].set_title('MNIST' + '\n No Stacking')
+    axarr[0].set_xticks(range(10))
+    axarr[0].set_yticks(range(10))
+    axarr[0].set_xticklabels(permutation)
+    axarr[0].set_yticklabels(permutation)
+    color = ['black','black','white','black','black']
+    for i in range(len(rearranged_results)):
+        for k, j in enumerate(range(-2,3)):
+            if i + j > -1 and i + j < 10:
+                axarr[0].text(i,i+j,np.round(rearranged_results[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+
+    initial_label_qubits = np.pad(initial_label_qubits, ((0,0), (0,6)))
+    for n_copies in range(max_copies + 1):
+        U = delta_efficent_deterministic_quantum_stacking(n_copies, True, dataset)
+
+        """
+        Rearrange test data to match new bitstring assignment
+        """
+        outer_ket_states = initial_label_qubits
+        #.shape = n_train, dim_l**n_copies+1
+        for k in range(n_copies):
+            outer_ket_states = [np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)]
+
+        """
+        Perform Overlaps
+        """
+        #We want qubit formation:
+        #|l_0^0>|l_1^0>|l_0^1>|l_1^1> |l_2^0>|l_3^0>|l_2^1>|l_3^1>...
+        #I.e. act only on first 2 qubits on all copies.
+        #Since unitary is contructed on first 2 qubits of each copy.
+        #So we want U @ SWAP @ |copy_preds>
+        print('Performing Overlaps!')
+        preds_U = np.array([abs(U.dot(i)) for i in tqdm(outer_ket_states)])
+
+        """
+        Trace out other qubits/copies
+        """
+
+        print('Performing Partial Trace!')
+        preds_U = np.array([np.diag(partial_trace(i, [0,1,2,3])) for i in tqdm(preds_U)])
+        preds_U = np.array([i / np.sqrt(i.conj().T @ i) for i in preds_U])
+
+        rearranged_results = []
+        for row in preds_U[permutation]:
+            rearranged_results.append(row[permutation])
+        rearranged_results = np.array(rearranged_results, dtype = np.float32)
+        total_results.append(rearranged_results.T)
+
+        axarr[n_copies+1].imshow(rearranged_results.T, cmap = "Greys")
+        axarr[n_copies+1].set_title('MNIST' + f'\n Stacking: Copies = {n_copies+1}')
+        axarr[n_copies+1].set_xticks(range(10))
+        axarr[n_copies+1].set_yticks(range(10))
+        axarr[n_copies+1].set_xticklabels(permutation)
+        axarr[n_copies+1].set_yticklabels(permutation)
+        for i in range(len(rearranged_results)):
+            for k, j in enumerate(range(-2,3)):
+                if i + j > -1 and i + j < 10:
+                    axarr[n_copies+1].text(i,i+j,np.round(rearranged_results[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+
+        #np.save(dataset + '_stacked_confusion_matrix', total_results)
+    #f.tight_layout()
+    #plt.savefig(dataaset + '_stacking_confusion_matrix_results.pdf')
+    plt.show()
+
+def plot_confusion_matrix(dataset = 'fashion_mnist'):
+    total_results = np.load(dataset + '_stacked_confusion_matrix(copy).npy')
+    permutation = load_brute_force_permutations(10,dataset)[1]
+
+    f, axarr = plt.subplots(1,4)
+    axarr[0].imshow(total_results[0], cmap = "Greys")
+    axarr[0].set_title(dataset + '\n No Stacking')
+    axarr[0].set_xticks(range(10))
+    axarr[0].set_yticks(range(10))
+    axarr[0].set_xticklabels(permutation)
+    axarr[0].set_yticklabels(permutation)
+    color = ['black','black','white','black','black']
+    for i in range(len(total_results[0])):
+        for k, j in enumerate(range(-2,3)):
+            if i + j > -1 and i + j < 10:
+                axarr[0].text(i,i+j,np.round(total_results[0][i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+
+    for n_copies in range(2 + 1):
+
+        axarr[n_copies+1].imshow(total_results[n_copies+1], cmap = "Greys")
+        axarr[n_copies+1].set_title(dataset + f'\n Stacking: Copies = {n_copies+1}')
+        axarr[n_copies+1].set_xticks(range(10))
+        axarr[n_copies+1].set_yticks(range(10))
+        axarr[n_copies+1].set_xticklabels(permutation)
+        axarr[n_copies+1].set_yticklabels(permutation)
+        for i in range(len(total_results[n_copies+1])):
+            for k, j in enumerate(range(-2,3)):
+                if i + j > -1 and i + j < 10:
+                    axarr[n_copies+1].text(i,i+j,np.round(total_results[n_copies+1].T[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+
+        #np.save(dataset + '_stacked_confusion_matrix', total_results)
+    #f.tight_layout()
+    #plt.savefig(dataaset + '_stacking_confusion_matrix_results.pdf')
+    plt.show()
+
+def test(n_copies, v_col = True, dataset = 'fashion_mnist'):
+    from numpy import linalg as LA
+    print('Dataset: ', dataset)
+
+    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
+    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+    possible_labels = list(set(y_train))
+
+    a, b, _, __ = load_data(
+        100, shuffle=False, equal_numbers=True
+    )
+    bitstrings = create_experiment_bitstrings(a, b)
+
+    dim_l = initial_label_qubits.shape[1]
+    dim_lc = dim_l ** (1 + n_copies)
+
+    weighted_outer_states = np.zeros((dim_lc, dim_lc))
+    for l in tqdm(possible_labels):
+        for i in tqdm(initial_label_qubits[y_train == l]):
+            ket = i
+
+            for k in range(n_copies):
+                ket = np.kron(ket, i)
+
+            outer = np.outer(np.kron(bitstrings[l].squeeze().tensors[5].data, np.eye(dim_lc//16)[0]), ket)
+            #print(outer.shape)
+            weighted_outer_states += outer
+
+    """
+        #print('Performing SVD!')
+        U, S = svd(weighted_outer_states)[:2]
+        if v_col:
+            #a = b = 16**n (using andrew's defn)
+            a, b = U.shape
+            p = int(np.log10(b)) - 1
+            D_trunc = 16
+            Vl = np.array(U[:, :b//16] @ np.sqrt(np.diag(S)[:b//16, :b//16]))
+            #Vl = np.array(U[:, :10**p] @ np.sqrt(np.diag(S)[:10**p, :10**p]))
+            #Vl = np.array(U[:, :D_trunc] @ np.sqrt(np.diag(S)[:D_trunc, :D_trunc]))
+        else:
+            Vl = np.array(U[:, :1] @ np.sqrt(np.diag(S)[:1, :1])).squeeze()
+
+        V.append(Vl)
+
+    V = np.array(V)
+    if v_col:
+        c, d, e = V.shape
+        #V = np.pad(V, ((0,dim_l - c), (0,0), (0,dim_l**p - D_trunc))).transpose(0, 2, 1).reshape(d , -1)
+        V = np.pad(V, ((0,dim_l - c), (0,0), (0,0))).transpose(0, 2, 1).reshape(dim_l*e, d)
+
+    else:
+        a, b = V.shape
+        V = np.pad(V, ((0,dim_l - a), (0,0)))
+    #np.save('V', V)
+    """
+    print('Performing Polar Decomposition!')
+    U = polar(weighted_outer_states)[0]
+    print('Finished Computing Stacking Unitary!')
+    return U.astype(np.float32)
 
 if __name__ == '__main__':
+    plot_confusion_matrix('mnist')
+    assert()
+    #U = test(1, dataset = 'fashion_mnist')
     #classical_stacking()
     #assert()
     #U = delta_efficent_deterministic_quantum_stacking(1, True)
-    results = []
-    for i in range(10):
-        U = specific_quantum_stacking(i, True)
-        training_predictions, test_predictions = evaluate_stacking_unitary(U, True)
-        results.append([training_predictions, test_predictions])
-        np.save('partial_stacking_results', results)
+    #plot_confusion_matrix('fashion_mnist')
+    #results = []
+    #for i in range(1,10):
+    #    print('NUMBER OF COPIES: ',i)
+    #    U = specific_quantum_stacking(i, True)
+    #    training_predictions, test_predictions = evaluate_stacking_unitary(U, True)
+    #    results.append([training_predictions, test_predictions])
+    #    #np.save('partial_stacking_results_2', results)
+    stacking_on_confusion_matrix(0, dataset = 'mnist')
+    #U = delta_efficent_deterministic_quantum_stacking(1, dataset = 'mnist')
+    #U = sum_state_deterministic_quantum_stacking(2, dataset = 'mnist')
+    #evaluate_stacking_unitary(U, dataset = 'fashion_mnist')
