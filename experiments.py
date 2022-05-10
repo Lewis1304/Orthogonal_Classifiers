@@ -484,6 +484,7 @@ def prepare_centred_batched_classifier(mps_train, labels, q_hairy_bitstrings, D_
     train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
     # Converting qMPOs into fMPOs
     MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
+    MPOs = [mpo.compress_centre_one_site(None, False) for mpo in MPOs]
 
     # Adding fMPOs together
     i = 0
@@ -524,7 +525,7 @@ def add_centre_sublist(*args):
 """
 Stacking
 """
-def mps_stacking(dataset, n_copies):
+def mps_stacking(training_mps_predictions, test_mps_predictions, n_copies, y_train, y_test):
 
     def generate_copy_state(QTN, n_copies):
         initial_QTN = QTN
@@ -544,27 +545,23 @@ def mps_stacking(dataset, n_copies):
             qtn_data.append(tensor)
         return qtn.TensorNetwork(qtn_data)
 
-    #Upload Data
-    training_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]#.astype(np.float32)
-    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')#.astype(np.int8)
-    training_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in training_label_qubits])
-
-    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*6000 : i * 6000 + 10]) for i in range(10)]))
-    #y_train = np.array(reduce(list.__add__, [list(y_train[i*6000 : i * 6000 + 10]) for i in range(10)]))
-
-    outer_ket_states = training_label_qubits
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, training_label_qubits)])
-
-    #Convert predictions to MPS
-    print('Encoding predictions...')
-    D_encode = 32
-    #training_mps_predictions = mps_encoding(training_label_qubits, 4)
-    training_mps_predictions = mps_encoding(outer_ket_states, D_encode)
-
     #Add n_copies of same prediction state
-    #training_copied_predictions = [generate_copy_state(pred,n_copies) for pred in training_mps_predictions]
-    training_copied_predictions = training_mps_predictions
+    training_copied_predictions = [generate_copy_state(pred,n_copies) for pred in training_mps_predictions]
+    #training_copied_predictions = training_mps_predictions
+
+    #print(training_copied_predictions_1[0])
+    #print(training_copied_predictions_2[0])
+    #print((training_copied_predictions_1[0] @ training_copied_predictions_2[0]).data)
+    #a = training_copied_predictions_2[0].compress_all(inplace = True, cutoff = 1e-4)
+    #a = training_copied_predictions_1[0]
+    #print(a)
+    #contracted_qtn = (a ^ all).squeeze()
+    #c = 5
+    #M = contracted_qtn.fuse({'a': [f'k{i}' for i in range(c)], 'b': [f'k{i}' for i in range(c,8)]})
+    #print(M)
+    #U,S,V = svd(M.data)
+    #print(np.diag(S))
+    #assert()
 
     #Create bitstrings to add onto copied states
     possible_labels = list(set(y_train))
@@ -578,7 +575,6 @@ def mps_stacking(dataset, n_copies):
     )
     hairy_bitstrings_data = [label_last_site_to_centre(b) for b in q_hairy_bitstrings]
     q_hairy_bitstrings = centred_bitstring_to_qtn(hairy_bitstrings_data)
-
 
     """
     train_mpos = mpo_encoding(training_copied_predictions, y_train, q_hairy_bitstrings)
@@ -602,9 +598,10 @@ def mps_stacking(dataset, n_copies):
 
     #Parameters for batch adding label predictions
     D_batch = 32
-    batch_nums = [3, 13, 139]
+    batch_nums = [4, 8, 13, 13]
+    #batch_nums = [3, 13, 39, 139]
     #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
-    #batch_nums = [100]
+    #batch_nums = [10]
 
     #Batch adding copied predictions to create sum states
     print('Batch adding predictions...')
@@ -618,41 +615,87 @@ def mps_stacking(dataset, n_copies):
     stacking_unitary = data_to_QTN(classifier_data.data)#.squeeze()
 
     #Evaluate mps stacking unitary
-    test_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions.npy')[15]
-    y_test = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions_labels.npy')
-    test_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in test_label_qubits])
-
-    #test_label_qubits = test_label_qubits[:100]
-    #y_test = y_test[:100]
 
     #Generate test copy states
-    print('Encoding test predictions...')
-    outer_ket_states = test_label_qubits
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, test_label_qubits)])
+    #print('Encoding test predictions...')
+    #outer_test_states = test_label_qubits
+    #for k in range(n_copies):
+    #    outer_test_states = np.array([np.kron(i, j) for i,j in zip(outer_test_states, test_label_qubits)])
 
-    #mps_test = mps_encoding(test_label_qubits, 4)
-    mps_test = mps_encoding(outer_ket_states, outer_ket_states.shape[1])
+    #mps_test = mps_encoding(test_label_qubits, None)
+    #mps_test = mps_encoding(outer_test_states, None)
+    test_copied_predictions = [generate_copy_state(pred,n_copies) for pred in test_mps_predictions]
+    #test_copied_predictions = mps_test
 
-    #test_copied_predictions = [generate_copy_state(pred,n_copies) for pred in mps_test]
-    test_copied_predictions = mps_test
 
     #Perform overlaps
     print('Performing overlaps...')
     stacked_predictions = np.array([np.abs((mps_image.H.squeeze() @ stacking_unitary.squeeze()).data) for mps_image in tqdm(test_copied_predictions)])
 
+    result = evaluate_classifier_top_k_accuracy(stacked_predictions, y_test, 1)
+    #Compute Accuracy
+    print()
+    #print('Test accuracy before:', evaluate_classifier_top_k_accuracy(test_label_qubits, y_test, 1))
+    print('Test accuracy U:', result)
+    print()
+
+    return result
+
+    """
+    mps_test = mps_encoding(test_label_qubits, 4)
+
+    test_copied_predictions_2 = [generate_copy_state(pred,n_copies) for pred in mps_test]
+
+    #Perform overlaps
+    print('Performing overlaps...')
+    stacked_predictions = np.array([np.abs((mps_image.H.squeeze() @ stacking_unitary.squeeze()).data) for mps_image in tqdm(test_copied_predictions_2)])
 
     #Compute Accuracy
     print()
     print('Test accuracy before:', evaluate_classifier_top_k_accuracy(test_label_qubits, y_test, 1))
     print('Test accuracy U:', evaluate_classifier_top_k_accuracy(stacked_predictions, y_test, 1))
     print()
+    """
+
+def tensor_network_stacking_experiment(dataset, max_n_copies):
+
+    #Upload Data
+    training_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]#.astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy')#.astype(np.int8)
+    training_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in training_label_qubits])
+
+    training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 5408]) for i in range(10)]))
+    y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 5408]) for i in range(10)]))
+    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 10]) for i in range(10)]))
+    #y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 10]) for i in range(10)]))
+
+    #outer_ket_states = training_label_qubits
+    #for k in range(n_copies):
+    #    outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, training_label_qubits)])
+
+    #Convert predictions to MPS
+    print('Encoding predictions...')
+    D_encode = 32
+    training_mps_predictions = mps_encoding(training_label_qubits, None)
+    #training_mps_predictions = mps_encoding(outer_ket_states, D_encode)
+
+    test_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions.npy')[15]
+    y_test = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions_labels.npy')
+    test_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in test_label_qubits])
+
+    #test_label_qubits = test_label_qubits[:100]
+    #y_test = y_test[:100]
+
+    test_mps_predictions = mps_encoding(test_label_qubits, None)
+
+    for i in range(max_n_copies):
+        result = mps_stacking(training_mps_predictions, test_mps_predictions, i, y_train, y_test)
+        np.save('tensor_network_stacking', result)
 
 
 
 if __name__ == "__main__":
-    for i in range(2,3):
-        mps_stacking('mnist',i)
+    tensor_network_stacking_experiment('mnist', 16)
     assert()
     #obtain_D_encode_preds()
     #single_image_sv, sum_state_sv = mps_image_singular_values()
