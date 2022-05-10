@@ -44,7 +44,7 @@ class fMPO:
             if s is not None:
                 self.s = s
             else:
-                self.s = data[-1].shape[1]
+                self.s = max([x.shape[1] for x in data]) #data[-1].shape[1]
 
             self.D = max([max(x.shape[2:]) for x in data])
 
@@ -368,9 +368,9 @@ class fMPO:
             """
             d, s, i, j = datum.shape
             """
-            reshapes d with j, s with j such that M.shape = (i,s*j*d)
+            reshapes d with j, s with i such that M.shape = (i*s,j*d)
             """
-            M = datum.transpose(2, 1, 3, 0).reshape(i, s * j * d)
+            M = datum.transpose(2, 1, 3, 0).reshape(i * s, j * d)
             u, S, v = svd(M, full_matrices=False)
 
             u = expand_dims(expand_dims(u.reshape(i, -1), 0), 0)
@@ -398,7 +398,6 @@ class fMPO:
 
 
         centre_site = np.argmax([i.shape[1] for i in self.data])
-
         #left to middle sweep
         for m in range(centre_site):
 
@@ -444,14 +443,12 @@ class fMPO:
                 .reshape(d, i, s, j)
                 .transpose(0, 2, 1, 3)
             )
-
-
-
-        #Sweep back normalises the operator. This is IMPORTANT otherwise batches
-        #Will have different weightings.
-        from variational_mpo_classifiers import data_to_QTN
-        qtn = data_to_QTN(self.data)
-        self.data[centre_site] /= np.sqrt(qtn.H @ qtn)
+        else:
+            #Sweep back normalises the operator. This is IMPORTANT otherwise batches
+            #Will have different weightings.
+            from variational_mpo_classifiers import data_to_QTN
+            qtn = data_to_QTN(self.data)
+            self.data[centre_site] /= np.sqrt(qtn.H @ qtn)
 
         return fMPO(self.data)
 

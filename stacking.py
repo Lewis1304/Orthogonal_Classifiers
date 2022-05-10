@@ -1,7 +1,7 @@
 from xmps.svd_robust import svd
 from scipy.linalg import polar
 import numpy as np
-from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, classifier_predictions
+from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, classifier_predictions, mps_encoding
 from plot_results import produce_psuedo_sum_states, load_brute_force_permutations
 from tools import load_data
 from scipy import sparse
@@ -245,6 +245,9 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, datase
 
         #print('Performing SVD!')
         U, S = svd(weighted_outer_states)[:2]
+        print(U.shape)
+        print(S.shape)
+        assert()
         if v_col:
             #a = b = 16**n (using andrew's defn)
             a, b = U.shape
@@ -268,6 +271,8 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, datase
         a, b = V.shape
         V = np.pad(V, ((0,dim_l - a), (0,0)))
     #np.save('V', V)
+    print(V.shape)
+    assert()
     print('Performing Polar Decomposition!')
     U = polar(V)[0]
     print('Finished Computing Stacking Unitary!')
@@ -543,74 +548,51 @@ def plot_confusion_matrix(dataset = 'fashion_mnist'):
     #plt.savefig(dataaset + '_stacking_confusion_matrix_results.pdf')
     plt.show()
 
-def test(n_copies, v_col = True, dataset = 'fashion_mnist'):
-    from numpy import linalg as LA
-    print('Dataset: ', dataset)
+def mps_stacking(dataset, n_copies):
 
-    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
-    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
-    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
-    possible_labels = list(set(y_train))
+    def generate_copy_state(QTN, n_copies):
+        initial_QTN = QTN
+        for _ in range(n_copies):
+            QTN = QTN | initial_QTN
+        return relabel_QTN(QTN)
 
-    a, b, _, __ = load_data(
-        100, shuffle=False, equal_numbers=True
-    )
-    bitstrings = create_experiment_bitstrings(a, b)
+    def relabel_QTN(QTN):
+        qtn_data = []
+        previous_ind = rand_uuid()
+        for j, site in enumerate(QTN.tensors):
+            next_ind = rand_uuid()
+            tensor = qtn.Tensor(
+                site.data, inds=(f"k{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+            )
+            previous_ind = next_ind
+            qtn_data.append(tensor)
+        return qtn.TensorNetwork(qtn_data)
 
-    dim_l = initial_label_qubits.shape[1]
-    dim_lc = dim_l ** (1 + n_copies)
+    #Upload Data
+    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
 
-    weighted_outer_states = np.zeros((dim_lc, dim_lc))
-    for l in tqdm(possible_labels):
-        for i in tqdm(initial_label_qubits[y_train == l]):
-            ket = i
+    trunc_label_qubits = initial_label_qubits[:100]
+    trunc_labels = y_train[:100]
 
-            for k in range(n_copies):
-                ket = np.kron(ket, i)
+    #Convert predictions to MPS
+    mps_predictions = mps_encoding(trunc_label_qubits, 4)
 
-            outer = np.outer(np.kron(bitstrings[l].squeeze().tensors[5].data, np.eye(dim_lc//16)[0]), ket)
-            #print(outer.shape)
-            weighted_outer_states += outer
+    #Add n_copies of same prediction state
+    copied_predictions = [generate_copy_state(pred,n_copies) for pred in mps_predictions]
 
-    """
-        #print('Performing SVD!')
-        U, S = svd(weighted_outer_states)[:2]
-        if v_col:
-            #a = b = 16**n (using andrew's defn)
-            a, b = U.shape
-            p = int(np.log10(b)) - 1
-            D_trunc = 16
-            Vl = np.array(U[:, :b//16] @ np.sqrt(np.diag(S)[:b//16, :b//16]))
-            #Vl = np.array(U[:, :10**p] @ np.sqrt(np.diag(S)[:10**p, :10**p]))
-            #Vl = np.array(U[:, :D_trunc] @ np.sqrt(np.diag(S)[:D_trunc, :D_trunc]))
-        else:
-            Vl = np.array(U[:, :1] @ np.sqrt(np.diag(S)[:1, :1])).squeeze()
+    #Add bitstring onto copied states
 
-        V.append(Vl)
 
-    V = np.array(V)
-    if v_col:
-        c, d, e = V.shape
-        #V = np.pad(V, ((0,dim_l - c), (0,0), (0,dim_l**p - D_trunc))).transpose(0, 2, 1).reshape(d , -1)
-        V = np.pad(V, ((0,dim_l - c), (0,0), (0,0))).transpose(0, 2, 1).reshape(dim_l*e, d)
-
-    else:
-        a, b = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0)))
-    #np.save('V', V)
-    """
-    print('Performing Polar Decomposition!')
-    U = polar(weighted_outer_states)[0]
-    print('Finished Computing Stacking Unitary!')
-    return U.astype(np.float32)
 
 if __name__ == '__main__':
-    plot_confusion_matrix('mnist')
+    #mps_stacking('mnist',1)
+    U = delta_efficent_deterministic_quantum_stacking(0, v_col = True, dataset = 'mnist')
+    evaluate_stacking_unitary(U, dataset = 'mnist')
     assert()
     #U = test(1, dataset = 'fashion_mnist')
     #classical_stacking()
     #assert()
-    #U = delta_efficent_deterministic_quantum_stacking(1, True)
     #plot_confusion_matrix('fashion_mnist')
     #results = []
     #for i in range(1,10):
@@ -619,7 +601,6 @@ if __name__ == '__main__':
     #    training_predictions, test_predictions = evaluate_stacking_unitary(U, True)
     #    results.append([training_predictions, test_predictions])
     #    #np.save('partial_stacking_results_2', results)
-    stacking_on_confusion_matrix(0, dataset = 'mnist')
+    #stacking_on_confusion_matrix(0, dataset = 'mnist')
     #U = delta_efficent_deterministic_quantum_stacking(1, dataset = 'mnist')
     #U = sum_state_deterministic_quantum_stacking(2, dataset = 'mnist')
-    #evaluate_stacking_unitary(U, dataset = 'fashion_mnist')

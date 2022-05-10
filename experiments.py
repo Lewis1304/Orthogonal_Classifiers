@@ -482,7 +482,6 @@ def centred_bitstring_to_qtn(bitstrings_data):
 def prepare_centred_batched_classifier(mps_train, labels, q_hairy_bitstrings, D_total, batch_nums):
 
     train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
-
     # Converting qMPOs into fMPOs
     MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
 
@@ -522,11 +521,138 @@ def add_centre_sublist(*args):
 
     return c.compress_centre_one_site(B_D, orthogonalise=ortho)
 
+"""
+Stacking
+"""
+def mps_stacking(dataset, n_copies):
+
+    def generate_copy_state(QTN, n_copies):
+        initial_QTN = QTN
+        for _ in range(n_copies):
+            QTN = QTN | initial_QTN
+        return relabel_QTN(QTN)
+
+    def relabel_QTN(QTN):
+        qtn_data = []
+        previous_ind = rand_uuid()
+        for j, site in enumerate(QTN.tensors):
+            next_ind = rand_uuid()
+            tensor = qtn.Tensor(
+                site.data, inds=(f"k{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+            )
+            previous_ind = next_ind
+            qtn_data.append(tensor)
+        return qtn.TensorNetwork(qtn_data)
+
+    #Upload Data
+    training_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]#.astype(np.float32)
+    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')#.astype(np.int8)
+    training_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in training_label_qubits])
+
+    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*6000 : i * 6000 + 10]) for i in range(10)]))
+    #y_train = np.array(reduce(list.__add__, [list(y_train[i*6000 : i * 6000 + 10]) for i in range(10)]))
+
+    outer_ket_states = training_label_qubits
+    for k in range(n_copies):
+        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, training_label_qubits)])
+
+    #Convert predictions to MPS
+    print('Encoding predictions...')
+    D_encode = 32
+    #training_mps_predictions = mps_encoding(training_label_qubits, 4)
+    training_mps_predictions = mps_encoding(outer_ket_states, D_encode)
+
+    #Add n_copies of same prediction state
+    #training_copied_predictions = [generate_copy_state(pred,n_copies) for pred in training_mps_predictions]
+    training_copied_predictions = training_mps_predictions
+
+    #Create bitstrings to add onto copied states
+    possible_labels = list(set(y_train))
+    n_sites = training_copied_predictions[0].num_tensors
+
+    hairy_bitstrings_data = create_hairy_bitstrings_data(
+        possible_labels, n_sites
+    )
+    q_hairy_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, n_sites
+    )
+    hairy_bitstrings_data = [label_last_site_to_centre(b) for b in q_hairy_bitstrings]
+    q_hairy_bitstrings = centred_bitstring_to_qtn(hairy_bitstrings_data)
+
+
+    """
+    train_mpos = mpo_encoding(training_copied_predictions, y_train, q_hairy_bitstrings)
+    train_fmpos = np.array([fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos])
+
+    print('Batch adding predictions...')
+    sum_states = []
+    for l in tqdm(possible_labels):
+        sub_list_mpo = train_fmpos[y_train == l][0]
+        for i in tqdm(train_fmpos[y_train == l][1:]):
+            sub_list_mpo = sub_list_mpo.add(i).compress_centre_one_site(4, orthogonalise=False)
+        sum_states.append(sub_list_mpo)
+
+    fMPO_classifier = sum_states[0]
+    for s in sum_states[1:]:
+        fMPO_classifier = fMPO_classifier.add(s)
+
+    fMPO_stacking_unitary = fMPO_classifier.compress_centre_one_site(4, orthogonalise=True)
+    stacking_unitary = data_to_QTN(fMPO_stacking_unitary.data)
+    """
+
+    #Parameters for batch adding label predictions
+    D_batch = 32
+    batch_nums = [3, 13, 139]
+    #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
+    #batch_nums = [100]
+
+    #Batch adding copied predictions to create sum states
+    print('Batch adding predictions...')
+    sum_states = prepare_centred_batched_classifier(training_copied_predictions, y_train, q_hairy_bitstrings, D_batch, batch_nums)
+
+    #Batch adding sum states to create stacking unitary
+    D_final = 32
+    batch_final = 10
+    ortho_at_end = True
+    classifier_data = adding_centre_batches(sum_states, D_final, batch_final, orthogonalise = ortho_at_end)[0]
+    stacking_unitary = data_to_QTN(classifier_data.data)#.squeeze()
+
+    #Evaluate mps stacking unitary
+    test_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions.npy')[15]
+    y_test = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions_labels.npy')
+    test_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in test_label_qubits])
+
+    #test_label_qubits = test_label_qubits[:100]
+    #y_test = y_test[:100]
+
+    #Generate test copy states
+    print('Encoding test predictions...')
+    outer_ket_states = test_label_qubits
+    for k in range(n_copies):
+        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, test_label_qubits)])
+
+    #mps_test = mps_encoding(test_label_qubits, 4)
+    mps_test = mps_encoding(outer_ket_states, outer_ket_states.shape[1])
+
+    #test_copied_predictions = [generate_copy_state(pred,n_copies) for pred in mps_test]
+    test_copied_predictions = mps_test
+
+    #Perform overlaps
+    print('Performing overlaps...')
+    stacked_predictions = np.array([np.abs((mps_image.H.squeeze() @ stacking_unitary.squeeze()).data) for mps_image in tqdm(test_copied_predictions)])
+
+
+    #Compute Accuracy
+    print()
+    print('Test accuracy before:', evaluate_classifier_top_k_accuracy(test_label_qubits, y_test, 1))
+    print('Test accuracy U:', evaluate_classifier_top_k_accuracy(stacked_predictions, y_test, 1))
+    print()
+
+
 
 if __name__ == "__main__":
-    get_D_total_predictions()
-    assert()
-    D_total_experiment()
+    for i in range(2,3):
+        mps_stacking('mnist',i)
     assert()
     #obtain_D_encode_preds()
     #single_image_sv, sum_state_sv = mps_image_singular_values()
