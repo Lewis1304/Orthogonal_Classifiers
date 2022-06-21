@@ -50,9 +50,7 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
     D = 16
     proj = np.zeros((sqrt_D ** 2, sqrt_D ** 2))
     for i in range(sqrt_D):
-        for j in range(sqrt_D):
-            if i == j:
-                proj[i, j] = 1
+        proj[i, i] = 1
 
     for l in tqdm(possible_labels):
         weighted_outer_states = np.zeros((dim_lc, dim_lc), dtype=complex)
@@ -71,7 +69,10 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
         print(weighted_outer_states_svd.shape)
         U, S, V = svd(weighted_outer_states_svd.reshape(D, -1))
         U_trunc = U[:, :sqrt_D]
-        V_1.append(U)
+        U_sing = U[:, :1]
+
+        print('U SHAPE', U_trunc.shape)
+        V_1.append(U_sing)
         U_truncdag = conj(U_trunc)
         weighted_outer_states_svd_2 = (
                     (U_truncdag @ weighted_outer_states_svd.reshape(D, -1)).reshape(*[sqrt_D] * 1, *[D] * 3)
@@ -81,13 +82,16 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
         weighted_outer_states_svd_3 = weighted_outer_states_svd_2
         U, S, V = svd(weighted_outer_states_svd_3)
         U_trunc = U[:, :sqrt_D]
+        U_sing = U[:, :1]
+
         # V_2 = U
-        V_2.append(U)
+        V_2.append(U_sing)
 
         U_truncdag = conj(U_trunc)
-        weighted_outer_states_svd_4 = (U_truncdag @ weighted_outer_states_svd_2).reshape(*[sqrt_D] * 3, *[D] * 1)
+        weighted_outer_states_svd_4 = (U_truncdag @ weighted_outer_states_svd_2).reshape(*[sqrt_D] * 3, *[D] * 1).transpose(1, 0, 2, 3)
         weighted_outer_states_svd_4 = (weighted_outer_states_svd_4 @ U_trunc)
-        #
+        print('FINAL SHAPE', weighted_outer_states_svd_4.shape)
+
         # weighted_outer_states_svd_4 = weighted_outer_states_svd_4.transpose(1, 0, 2, 3, 4, 5, 6, 7).reshape(sqrt_D, -1)
         # weighted_outer_states_svd_5 = weighted_outer_states_svd_4
         # U, S, V = svd(weighted_outer_states_svd_5)
@@ -109,41 +113,53 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
 
         print(weighted_outer_states_svd_4.shape)
         # @ U @ proj
-        V_3.append(weighted_outer_states_svd_4.reshape(sqrt_D ** 2, sqrt_D ** 2))
-        # if v_col:
-        #     # a = b = 16**n (using andrew's defn)
-        #     a, b = U.shape
-        #     p = int(np.log10(b)) - 1
-        #     D_trunc = 16
-        #     Vl = np.array(U[:, :b // 16] @ np.sqrt(np.diag(S)[:b // 16, :b // 16]))
-        #     # Vl = np.array(U[:, :10**p] @ np.sqrt(np.diag(S)[:10**p, :10**p]))
-        #     # Vl = np.array(U[:, :D_trunc] @ np.sqrt(np.diag(S)[:D_trunc, :D_trunc]))
-        # else:
-        #     Vl = np.array(U[:, :1] @ np.sqrt(np.diag(S)[:1, :1])).squeeze()
-
-        # V.append(Vl)
+        U, S, V = svd(weighted_outer_states_svd_4.reshape(sqrt_D ** 2, sqrt_D ** 2))
+        U_sing = U[:1, :]
+        V_3.append(U_sing)
 
     V_1 = np.array(V_1)
     V_2 = np.array(V_2)
     V_3 = np.array(V_3)
-    print(V_1.shape)
-    print(V_2.shape)
-    print(V_3.shape)
+    print('V1 per label ', V_1.shape)
+    print('V2 per label ', V_2.shape)
+    print('V3 per label ', V_3.shape)
+
     c, d, e = V_1.shape
     V_1 = np.pad(V_1, ((0, dim_l - c), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * e, d)
     f, g, h = V_2.shape
     V_2 = np.pad(V_2, ((0, dim_l - f), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * h, g)
     l, m, p = V_3.shape
-    V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * p, m)
+    # V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * p, m)
+    V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).reshape(dim_l * m, p)
 
+    print('V1', V_1.shape)
+    print('V2', V_2.shape)
+    print('V3', V_3.shape)
     print('Performing Polar Decomposition!')
     U_1 = polar(V_1)[0]
     U_2 = polar(V_2)[0]
     U_3 = polar(V_3)[0]
+    print('U_1', U_1.shape)
+    print('U_2', U_2.shape)
+    print('U_3', U_3.shape)
+
     iden = np.identity(sqrt_D)
-    U = np.kron(iden, np.kron(U_3, iden)) @ np.kron(U_1, U_2)
+    iden_16 = np.identity(D)
+
+    U =   np.kron(U_1, U_2) @ np.kron(iden, np.kron(conj(U_3), iden))
+    # U =  np.kron(iden, np.kron(iden, U_3)) @ np.kron(U_1, U_2)
+    # U =  np.kron(iden_16, U_3) @ np.kron(U_1, U_2)
+    # U =  np.kron(iden_16, U_3) @ np.kron(U_1, iden_16)
+
+    # U = np.kron(U_1, U_2) @  np.kron(iden, np.kron(iden_16, iden))
+
     print('Finished Computing Stacking Unitary!')
     print(U_1.shape, U_2.shape, U_3.shape)
+
+    np.save(f'U', U)
+    return U
+
+
 
     # for l in tqdm(possible_labels):
     #     weighted_outer_states = np.zeros((dim_lc, dim_lc), dtype=complex)
@@ -225,8 +241,7 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
     #
     # print('Finished Computing Stacking Unitary!')
     # print(U_1.shape, U_2.shape, U_3.shape)
-    np.save(f'U', U.astype(np.float32))
-    return U.astype(np.float32)
+
 
 
 def get_stacking_unitary_mps(n_copies, dataset='mnist'):
@@ -343,6 +358,7 @@ def evaluate_stacking_unitary_mps(U, n_copies, dataset='fashion_mnist', training
     """
     print('Performing Partial Trace!')
     preds_U = np.array([np.diag(partial_trace(i, [0, 1, 2, 3])) for i in tqdm(preds_U)])
+    # preds_U = np.array([np.diag(partial_trace(i, [4, 5, 6, 7])) for i in tqdm(preds_U)])
 
     test_predictions = evaluate_classifier_top_k_accuracy(preds_U, y_test, 1)
     np.save(f'hello_ortho_d_final_vs_test_predictions.npy', preds_U)
