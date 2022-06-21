@@ -1,7 +1,7 @@
 from variational_mpo_classifiers import *
 from deterministic_mpo_classifier import *
-from stacking import *
-#prepare_batched_classifier, prepare_ensemble, unitary_qtn, prepare_sum_states, adding_batches, prepare_linear_classifier, linear_classifier_predictions
+#from stacking import *
+
 import os
 from tqdm import tqdm
 from xmps.svd_robust import svd
@@ -11,14 +11,7 @@ Prepare Experiment
 """
 
 
-def initialise_experiment(
-    n_samples,
-    D,
-    arrangement="one class",
-    initialise_classifier=False,
-    initialise_classifier_settings=(10, False),
-    prep_sum_states = False
-):
+def initialise_experiment(n_samples, D, arrangement="one class", initialise_classifier=False, prep_sum_states = False, centre_site= False, initialise_classifier_settings=(10, False)):
     """
     int: n_samples: Number of data samples (total)
     int: D_total: Bond dimension of classifier and data
@@ -53,6 +46,11 @@ def initialise_experiment(
     q_hairy_bitstrings = bitstring_data_to_QTN(
         hairy_bitstrings_data, n_sites
     )
+
+    if centre_site:
+        hairy_bitstrings_data = [label_last_site_to_centre(b) for b in q_hairy_bitstrings]
+        q_hairy_bitstrings = centred_bitstring_to_qtn(hairy_bitstrings_data)
+
     # MPS encode data
     mps_train = mps_encoding(x_train, D_encode)
 
@@ -61,29 +59,37 @@ def initialise_experiment(
     # Initial Classifier
     if initialise_classifier:
 
-        batch_num, ortho_at_end = initialise_classifier_settings
+        batch_nums, ortho_at_end = initialise_classifier_settings
 
+        #Prepare sum states for each class. Then adds sum states together.
         if prep_sum_states:
+            assert(arrangement == "one class")
+            batch_final = batch_nums.pop(-1)
 
-            sum_states = prepare_batched_classifier(
-                mps_train, y_train, D_batch, batch_num, prep_sum_states
-            )
+            if centre_site:
+                sum_states = prepare_centred_batched_classifier(
+                    mps_train, y_train, q_hairy_bitstrings, D_batch, batch_nums
+                )
+            else:
+                sum_states = prepare_batched_classifier(
+                    mps_train, y_train, q_hairy_bitstrings, D_batch, batch_nums, prep_sum_states
+                )
 
-            mpo_classifier = sum_states
+            qsum_states = [data_to_QTN(s.data) for s in sum_states]
 
-            sum_states = [data_to_QTN(s.compress_one_site(D=D_batch, orthogonalise = ortho_at_end).data).reindex({'s9':'t9'}) for s in sum_states]
+            if centre_site:
+                classifier_data = adding_centre_batches(sum_states, D_final, batch_final, orthogonalise = ortho_at_end)[0]
+            else:
+                classifier_data = adding_batches(sum_states, D_final, batch_final, orthogonalise = ortho_at_end)[0]
 
-            classifier_data = adding_batches(mpo_classifier, D_final, 10)[0].compress_one_site(
-                D=D_final, orthogonalise=ortho_at_end
-            )
-            mpo_classifier = data_to_QTN(classifier_data.data)#.squeeze()
+            mpo_classifier = data_to_QTN(classifier_data.data)
 
-            return (mps_train, y_train), (mpo_classifier, sum_states), q_hairy_bitstrings
+            return (mps_train, y_train), (mpo_classifier, qsum_states), q_hairy_bitstrings
 
         else:
 
             fmpo_classifier = prepare_batched_classifier(
-                mps_train, y_train, D_batch, batch_num
+                mps_train, y_train, D_batch, batch_nums
             )
 
             classifier_data = fmpo_classifier.compress_one_site(
@@ -95,361 +101,148 @@ def initialise_experiment(
         # MPO encode data (already encoded as mps)
         # Has shape: # classes, mpo.shape
         old_classifier_data = prepare_batched_classifier(
-            mps_train[:10], list(range(10)), 32, 10
+            mps_train[:10], list(range(10)), 32, [10]
         ).compress_one_site(D=32, orthogonalise=False)
         old_classifier = data_to_QTN(old_classifier_data.data)#.squeeze()
         mpo_classifier = create_mpo_classifier_from_initialised_classifier(old_classifier).squeeze()
-        #mpo_classifier = create_mpo_classifier(
-        #    mps_train, q_hairy_bitstrings, seed=420, full_sized=True
-        #).squeeze()
 
     return (mps_train, y_train), mpo_classifier, q_hairy_bitstrings
 
 """
-Experiments
+Get sum states experiments
 """
 
+def D_total_experiment():
+    print('ACCURACY VS D_TOTAL EXPERIMENT')
 
-def all_classes_experiment(
-    mpo_classifier,
-    mps_train,
-    q_hairy_bitstrings,
-    y_train,
-    predict_func,
-    loss_func,
-    title):
-    print(title)
-
-    classifier_opt = mpo_classifier
-    #classifier_opt = pad_qtn_classifier(mpo_classifier)
-    # classifier_opt = create_mpo_classifier_from_initialised_classifier(classifier_opt, seed = 420)
-
-    def optimiser(classifier):
-        optmzr = TNOptimizer(
-            classifier,  # our initial input, the tensors of which to optimize
-            loss_fn=lambda c: loss_func(c, mps_train, q_hairy_bitstrings, y_train),
-            norm_fn=normalize_tn,
-            autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
-            optimizer="nadam",  # supplied to scipy.minimize
-        )
-        return optmzr
-
-    save_qtn_classifier(classifier_opt, title + '/mpo_classifier_epoch_0')
-
-    print(classifier_opt)
-    print(q_hairy_bitstrings[0])
-    best_accuracy = 0
-
-    for i in range(1,1000):
-        optmzr = optimiser(classifier_opt)
-        classifier_opt = optmzr.optimize(1)
-
-        #if i % 10 == 0:
-        save_qtn_classifier(classifier_opt, title + f'/mpo_classifier_epoch_{i}')
-
-        """
-        predictions = predict_func(classifier_opt, mps_train, q_hairy_bitstrings)
-        predicitions_store.append(predictions)
-        accuracy = evaluate_classifier_top_k_accuracy(predictions, y_train, 1)
-        accuracies.append(accuracy)
-
-        losses.append(optmzr.loss)
-
-        plot_results((accuracies, losses, predicitions_store), title)
-        """
-        """
-        if accuracy > best_accuracy:
-            best_accuracy = accuracy
-            save_qtn_classifier(classifier_opt, title)
-        """
-    #return accuracies, losses
+    D_totals = range(2,37,2)
+    #num_samples = 5421*10
+    num_samples = 1000
+    #batch_nums = [3, 13, 139, 10]
+    batch_nums = [10, 10, 10]
+    ortho_at_end = False
 
 
-def svd_classifier(dir, mps_images, labels):
-    def compress_QTN(projected_q_mpo, D, orthogonalise):
-        # ASSUMES q_mpo IS ALREADY PROJECTED ONTO |0> STATE FOR FIRST (n_sites - n_hairysites) SITES
-        # compress procedure leaves mpo in mixed canonical form
-        # center site is at left most hairest site.
+    for D_total in tqdm(D_totals):
+        D_encode = D_total
+        D_batch = D_total
+        D_final = D_total
 
-        if projected_q_mpo.tensors[-1].shape[1] > 4:
-            return fMPO_to_QTN(
-                QTN_to_fMPO(projected_q_mpo).compress_one_site(
-                    D=D, orthogonalise=orthogonalise
+        D = (D_encode, D_batch, D_final)
+        data, classifiers, bitstrings = initialise_experiment(
+                    num_samples,
+                    D,
+                    arrangement='one class',
+                    initialise_classifier=True,
+                    prep_sum_states = True,
+                    centre_site = True,
+                    initialise_classifier_settings=([3, 13, 139, 10], ortho_at_end),
                 )
-            )
-        return fMPO_to_QTN(
-            QTN_to_fMPO(projected_q_mpo).compress(D=D, orthogonalise=orthogonalise)
+        mps_images, labels = data
+        _, sum_states = classifiers
+
+        path = "Classifiers/mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{D_total}/"
+        os.makedirs(path, exist_ok=True)
+        #[save_qtn_classifier(s , "mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{D_total}/" + f"digit_{i}") for i, s in enumerate(sum_states)]
+
+def D_encode_experiment():
+    print('ACCURACY VS D_ENCODE EXPERIMENT')
+
+    D_encodes = range(2,33,2)
+    D_batch = 32
+    D_final = 32
+    num_samples = 5421*10
+    #num_samples = 1000
+    batch_nums = [3, 13, 139, 10]
+    #batch_nums = [10, 10, 10]
+    ortho_at_end = False
+
+    for D_encode in tqdm(D_encodes):
+
+        D = (D_encode, D_batch, D_final)
+        data, classifier, bitstrings = initialise_experiment(
+                    num_samples,
+                    D,
+                    arrangement='one class',
+                    initialise_classifier=True,
+                    prep_sum_states = True,
+                    centre_site = True,
+                    initialise_classifier_settings=([3, 13, 139, 10], ortho_at_end),
+                    )
+        mps_images, labels = data
+        _, sum_states = classifier
+
+        path = "Classifiers/mnist_mixed_sum_states/D_encode/" + f"sum_states_D_encode_{D_encode}/"
+        os.makedirs(path, exist_ok=True)
+        [save_qtn_classifier(s , "mnist_mixed_sum_states/D_encode/" + f"sum_states_D_encode_{D_encode}/" + f"digit_{i}") for i, s in enumerate(sum_states)]
+
+def D_batch_experiment():
+    print('ACCURACY VS D_BATCH EXPERIMENT')
+
+    D_batches = range(2,33,2)
+    D_encode = 32
+    num_samples = 5421*10
+    #num_samples = 1000
+    batch_nums = [3, 13, 139]
+    #batch_nums = [10, 10, 10]
+    ortho_at_end = False
+
+    x_train, y_train, x_test, y_test = load_data(
+        num_samples, shuffle=False, equal_numbers=True
+    )
+    x_train, y_train = arrange_data(x_train, y_train, arrangement='one class')
+    mps_train = mps_encoding(x_train, D_encode)
+    q_hairy_bitstrings = create_experiment_bitstrings(x_train, y_train)
+
+
+    for D_batch in tqdm(D_batches):
+
+        list_of_classifiers = prepare_centred_batched_classifier(
+            mps_train, y_train, q_hairy_bitstrings, D_batch, batch_nums
         )
 
-    def QTN_to_fMPO(QTN):
-        qtn_data = [site.data for site in QTN.tensors]
-        return fMPO(qtn_data)
+        qsum_states = [data_to_QTN(s.data) for s in list_of_classifiers]
 
-    def fMPO_to_QTN(fmpo):
-        fmpo_data = fmpo.data
-        return data_to_QTN(fmpo_data)
+        path = "Classifiers/mnist_mixed_sum_states/D_batch/" + f"sum_states_D_batch_{D_batch}/"
+        os.makedirs(path, exist_ok=True)
+        [save_qtn_classifier(s , "mnist_mixed_sum_states/D_batch/" + f"sum_states_D_batch_{D_batch}/" + f"digit_{i}") for i, s in enumerate(qsum_states)]
 
-    classifier_og = load_qtn_classifier(dir)
-    # print('Original Classifier:', classifier_og)
+def create_experiment_bitstrings(x_train, y_train):
 
-    # shift all legs to the right. Does not effect performance.
-    classifier_og = fMPO_to_QTN(
-        QTN_to_fMPO(classifier_og).compress_one_site(D=None, orthogonalise=False)
-    )
-
-    hairy_bitstrings_data = create_hairy_bitstrings_data(
-        list(set(labels)), 1, classifier_og.num_tensors, one_site=True
-    )
-    one_site_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, 1, classifier_og.num_tensors, truncated=True
-    )
-
-    predictions_og = classifier_predictions(
-        classifier_og, mps_images, one_site_bitstrings
-    )
-    og_acc = evaluate_classifier_top_k_accuracy(predictions_og, labels, 1)
-    print("Original Classifier Accuracy:", og_acc)
-
-    # print('Original Classifier Loss:', stoundenmire_loss(classifier_og, mps_images, bitstrings, labels))
-
-    """
-    Shifted, but not orthogonalised
-    """
-    # classifier_shifted = compress_QTN(classifier_og, None, False)
-    # classifier_shifted = fMPO_to_QTN(
-    #    QTN_to_fMPO(classifier_og).compress_one_site(
-    #        D=None, orthogonalise=False
-    #    )
-    # )
-    # print(classifier_shifted)
-
-    # predictions_shifted = classifier_predictions(classifier_shifted, mps_images, one_site_bitstrings)
-    # shifted_acc = evaluate_classifier_top_k_accuracy(predictions_shifted, labels, 1)
-    # print('Shifted Classifier Accuracy:', shifted_acc)
-    # print('Shifted Classifier Loss:', stoundenmire_loss(classifier_shifted, mps_images, bitstrings, labels))
-
-    """
-    Shifted, and orthogonalised
-    """
-    classifier_ortho = compress_QTN(classifier_og, None, True)
-    # print(classifier_ortho)
-
-    predictions_ortho = classifier_predictions(
-        classifier_ortho, mps_images, one_site_bitstrings
-    )
-    ortho_acc = evaluate_classifier_top_k_accuracy(predictions_ortho, labels, 1)
-    print("Orthogonalised Classifier Accuracy:", ortho_acc)
-
-    # print('Orthogonalised Classifier Loss:', stoundenmire_loss(classifier_ortho, mps_images, bitstrings, labels))
-
-    return og_acc, ortho_acc
-
-def deterministic_mpo_classifier_experiment(n_samples,batch_num):
-    D_encode, D_batch, D_final = (32, None, 50)
-
-    """
-    # Load & Organise Data
-    """
-    x_train, y_train, x_test, y_test = load_data(
-        n_samples, shuffle=False, equal_numbers=True
-    )
-    x_train, y_train = arrange_data(x_train, y_train, arrangement="one class")
-
-    """
-    # Create Bitstrings
-    """
-    # All possible class labels
     possible_labels = list(set(y_train))
-    # Number of "label" sites
-    n_hairysites = int(np.ceil(math.log(len(possible_labels), 4)))
+
     # Number of total sites (mps encoding)
     n_sites = int(np.ceil(math.log(x_train.shape[-1], 2)))
 
     # Create hairy bitstrings
     hairy_bitstrings_data = create_hairy_bitstrings_data(
-        possible_labels, n_hairysites, n_sites, True
+        possible_labels, n_sites
     )
     q_hairy_bitstrings = bitstring_data_to_QTN(
-        hairy_bitstrings_data, n_hairysites, n_sites, truncated=True
+        hairy_bitstrings_data, n_sites
     )
 
-    """
-    # MPS encode data
-    """
-    mps_train = mps_encoding(x_train, D_encode)
+    hairy_bitstrings_data = [label_last_site_to_centre(b) for b in q_hairy_bitstrings]
+    q_hairy_bitstrings = centred_bitstring_to_qtn(hairy_bitstrings_data)
 
-    """
-    # Initialise Classifier
-    """
-    accuracies = []
-    from fMPO_reduced import fMPO
+    return q_hairy_bitstrings
 
-    for D_batch in tqdm(range(10, 110, 10)):
+"""
+Get predictions
+"""
 
-        fmpo_classifier = prepare_batched_classifier(
-            mps_train, y_train, D_batch, batch_num, one_site=False
-        )
+def get_D_total_predictions():
+    print('OBTAINING D_TOTAL PREDICTIONS')
 
-        data = fMPO(fmpo_classifier.data)
-        classifier_data = data.compress_one_site(
-            D=D_final, orthogonalise=False
-        )
-        mpo_classifier = data_to_QTN(classifier_data.data).squeeze()
-
-        """
-        # Evaluate Classifier
-        """
-        predictions = classifier_predictions(mpo_classifier, mps_train, q_hairy_bitstrings)
-        accuracy = evaluate_classifier_top_k_accuracy(predictions, y_train, 1)
-        accuracies.append(accuracy)
-
-        np.save(f'accuracies_D_final_{D_final}', accuracies)
-
-def ensemble_experiment(n_classifiers, mps_images, labels, D_total, batch_num):
-    ensemble = prepare_ensemble(n_classifiers, mps_images, labels, D_total = D_total, batch_num = batch_num)
-
-    predictions = ensemble_predictions(ensemble, mps_images, bitstrings)
-    hard_result = evaluate_hard_ensemble_top_k_accuracy(predictions, labels, 1)
-    soft_result = evaluate_soft_ensemble_top_k_accuracy(predictions, labels, 1)
-
-    print('Hard result:', hard_result)
-    print('Soft result:', soft_result)
-
-def d_encode_vs_acc():
-
-    #Biggest equal size is n_train = 5329 * 10 with batch_num = 73
-    #Can use n_train = 4913 with batch_num = 17
-    num_samples = 5329*10
-    batch_num = 73
-    #num_samples = 100
-    #batch_num = 10
-
-    one_site = True
-    one_site_adding = False
-    ortho_at_end = False
-    D_batch = 32
-
-    x_train, y_train, x_test, y_test = load_data(
-        100,10000, shuffle=False, equal_numbers=True
-    )
-    D_test = 32
-    mps_test = mps_encoding(x_test, D_test)
-
-    accuracies = []
-    for D_encode in tqdm(range(2, 33)):
-
-        data, classifier_data, bitstrings = initialise_experiment(
-                    num_samples,
-                    (D_encode, D_batch, D_batch),
-                    arrangement='one class',
-                    truncated=True,
-                    one_site=one_site,
-                    initialise_classifier=True,
-                    initialise_classifier_settings=(batch_num, one_site_adding, ortho_at_end),
-                )
-        mps_images, labels = data
-
-        for D_final in tqdm([10, 20, 32]):
-
-            fmpo_classifier = fMPO(classifier_data.data)
-            classifier = data_to_QTN(fmpo_classifier.compress_one_site(D=D_final, orthogonalise=False))
-
-            predictions = classifier_predictions(classifier.squeeze(), mps_test, bitstrings)
-            accuracy = evaluate_classifier_top_k_accuracy(predictions, y_test, 1)
-
-            accuracies.append(accuracy)
-            np.save('d_encode_vs_acc_d_final_10_20_32', accuracies)
-
-    assert()
-
-def d_batch_vs_acc():
-
-    #Biggest equal size is n_train = 5329 * 10 with batch_num = 73
-    #Can use n_train = 4913 with batch_num = 17
-    num_samples = 5329*10
-    batch_num = 73
-    #num_samples = 100
-    #batch_num = 10
-
-    one_site = True
-    one_site_adding = False
-    ortho_at_end = False
-    D_encode = 32
-
-    x_train, y_train, x_test, y_test = load_data(
-        100,10000, shuffle=False, equal_numbers=True
-    )
-    D_test = 32
-    mps_test = mps_encoding(x_test, D_test)
-
-    accuracies = []
-    for D_batch in tqdm(range(2, 33)):
-
-        data, list_of_classifiers, bitstrings = initialise_experiment(
-                    num_samples,
-                    (D_encode, D_batch, None),
-                    arrangement='one class',
-                    truncated=True,
-                    one_site=one_site,
-                    initialise_classifier=True,
-                    initialise_classifier_settings=(batch_num, one_site_adding, ortho_at_end),
-                )
-        mps_images, labels = data
-
-        for D_final in tqdm([10, 20, 32]):
-
-            sum_states = list_of_classifiers
-            #Here is matters that we put D_final instead of D_batch. Since in this case
-            #D_batch can be lower than D_final. I.e. D_batch >= D_final is ok. D_batch < D_final not ok.
-            fmpo_classifier = adding_batches(sum_states, D_final, 10)[0]
-
-            #2nd compress doesn't really do anything. Since classifier is compressed when all states
-            #are added. Here for consistency sake.
-            classifier = data_to_QTN(fmpo_classifier.compress_one_site(D=D_final, orthogonalise=False))
-
-            predictions = classifier_predictions(classifier.squeeze(), mps_test, bitstrings)
-            accuracy = evaluate_classifier_top_k_accuracy(predictions, y_test, 1)
-
-            accuracies.append(accuracy)
-            np.save('d_batch_vs_acc_d_final_10_20_32', accuracies)
-
-    assert()
-
-def d_final_vs_acc(mps_images, labels, bitstrings):
-
-    #x_train, y_train, x_test, y_test = load_data(
-    #    100,10000, shuffle=False, equal_numbers=True
-    #)
-    #D_test = 32
-    #mps_test = mps_encoding(x_test, D_test)
-
-    initial_classifier = load_qtn_classifier('Big_Classifiers/non_ortho_mpo_classifier_32')
-    accuracies = []
-    for D_final in tqdm(range(2, 33)):
-        fmpo_classifier = fMPO([site.data for site in initial_classifier])
-        truncated_fmpo_classifier = fmpo_classifier.compress_one_site(D=D_final, orthogonalise=False)
-        qtn_classifier = data_to_QTN(truncated_fmpo_classifier)
-
-        #predictions = classifier_predictions(qtn_classifier.squeeze(), mps_test, bitstrings)
-
-        predictions = np.array([abs((qtn_classifier @ i).squeeze().data) for i in tqdm(mps_images)])
-        accuracy = evaluate_classifier_top_k_accuracy(predictions, labels, 1)
-        accuracies.append(accuracy)
-        np.save('results/non_ortho_d_final_vs_training_acc', accuracies)
-
-def obtain_deterministic_accuracies(bitstrings):
-    n_train_samples = 5329*10
+    n_train_samples = 5421*10
+    #n_train_samples = 1000
     n_test_samples = 10000
-    #n_samples = 100
+    #n_test_samples = 1000
 
     x_train, y_train, x_test, y_test = load_data(
         n_train_samples,n_test_samples, shuffle=False, equal_numbers=True
     )
-
-    #print('Loaded Data!')
     x_train, y_train = arrange_data(x_train, y_train, arrangement='one class')
-    #print('Arranged Data!')
-
 
     # MPS encode data
     D_encode = 32
@@ -457,285 +250,523 @@ def obtain_deterministic_accuracies(bitstrings):
     mps_test = mps_encoding(x_test, D_encode)
 
 
-    non_ortho_training_accuracies = []
-    ortho_training_accuracies = []
-    non_ortho_test_accuracies = []
-    ortho_test_accuracies = []
-    for i in tqdm(range(32,51)):
-        print(f'Bond order: {i}')
-        non_ortho_classifier = load_qtn_classifier(f'Big_Classifiers/non_ortho_mpo_classifier_{i}')
-        ortho_classifier = load_qtn_classifier(f'Big_Classifiers/ortho_mpo_classifier_{i}')
+    non_ortho_training_predictions = []
+    ortho_training_predictions = []
+    non_ortho_test_predictions = []
+    ortho_test_predictions = []
 
-        print('Training predicitions: ')
-        non_ortho_training_predictions = classifier_predictions(non_ortho_classifier.squeeze(), mps_train, bitstrings)
-        non_ortho_training_accuracy = evaluate_classifier_top_k_accuracy(non_ortho_training_predictions, y_train, 1)
+    D_totals = range(2, 37, 2)
+    for D_total in tqdm(D_totals):
 
-        ortho_training_predictions = classifier_predictions(ortho_classifier.squeeze(), mps_train, bitstrings)
-        ortho_training_accuracy = evaluate_classifier_top_k_accuracy(ortho_training_predictions, y_train, 1)
+        path = "mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{D_total}/"
 
-        print('Test predicitions: ')
-        non_ortho_test_predictions = classifier_predictions(non_ortho_classifier.squeeze(), mps_test, bitstrings)
-        non_ortho_test_accuracy = evaluate_classifier_top_k_accuracy(non_ortho_test_predictions, y_test, 1)
+        sum_states = [load_qtn_classifier(path + f"digit_{i}") for i in range(10)]
+        sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in sum_states]
 
-        ortho_test_predictions = classifier_predictions(ortho_classifier.squeeze(), mps_test, bitstrings)
-        ortho_test_accuracy = evaluate_classifier_top_k_accuracy(ortho_test_predictions, y_test, 1)
+        #non_ortho_classifier_data = adding_centre_batches(sum_states_data, D_total, 10, orthogonalise = False)[0]
+        #non_ortho_mpo_classifier = data_to_QTN(non_ortho_classifier_data.data).squeeze()
 
-        non_ortho_training_accuracies.append(non_ortho_training_accuracy)
-        ortho_training_accuracies.append(ortho_training_accuracy)
-        non_ortho_test_accuracies.append(non_ortho_test_accuracy)
-        ortho_test_accuracies.append(ortho_test_accuracy)
+        ortho_classifier_data = adding_centre_batches(sum_states_data, D_total, 10, orthogonalise = True)[0]
+        ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data).squeeze()
 
-        np.save('Classifiers/Big_Classifiers/non_ortho_training_accuracies_32_50', non_ortho_training_accuracies)
-        np.save('Classifiers/Big_Classifiers/ortho_training_accuracies_32_50', ortho_training_accuracies)
-        np.save('Classifiers/Big_Classifiers/non_ortho_test_accuracies_32_50', non_ortho_test_accuracies)
-        np.save('Classifiers/Big_Classifiers/ortho_test_accuracies_32_50', ortho_test_accuracies)
-    assert()
+        #print('Training predicitions: ')
+        #non_ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+        #ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
 
-def collect_variational_classifier_results(title, mps_test, y_test):
-    if title == 'cross_entropy_random':
-        x = range(0, 1000, 10)
-    elif title == 'abs_stoudenmire_loss_random':
-        x = range(89)
-    elif title == 'cross_entropy_loss_det_init_non_ortho':
-        x = range(0, 941, 10)
-    elif title == 'abs_stoudenmire_loss_det_init_non_ortho':
-        x = range(77)
+        #print('Test predicitions: ')
+        #non_ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
+        ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
+        #non_ortho_training_predictions.append(non_ortho_training_prediction)
+        #ortho_training_predictions.append(ortho_training_prediction)
+        #non_ortho_test_predictions.append(non_ortho_test_prediction)
+        ortho_test_predictions.append(ortho_test_prediction)
 
+        #print('D_total non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
+        print('D_total ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
 
-    accuracies = []
-    for i in tqdm(x[::-1]):
-        classifier = load_qtn_classifier(title + f'/mpo_classifier_epoch_{i}')#.squeeze()
-        fmpo_classifier = fMPO([site.data for site in classifier.tensors])
-        ortho_classifier = data_to_QTN((fmpo_classifier.compress_one_site(D = 32, orthogonalise = True)).data).squeeze()
+        #np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "non_ortho_d_total_vs_training_predictions", non_ortho_training_predictions)
+        #np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "ortho_d_total_vs_training_predictions", ortho_training_predictions)
+        #np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "non_ortho_d_total_vs_test_predictions", non_ortho_test_predictions)
+        np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_test_predictions", ortho_test_predictions)
 
-        predictions = np.array([abs((mps_image.H @ ortho_classifier).squeeze().data) for mps_image in tqdm(mps_test)])
-        accuracies.append(evaluate_classifier_top_k_accuracy(predictions, y_test, 1))
-        print(accuracies)
-        assert()
-    np.save('ortho_' + title + '_test_accuracies', accuracies)
+def get_D_final_predictions():
+    print('OBTAINING D_FINAL PREDICTIONS')
 
-def mps_image_singular_values():
-    from xmps.fMPS import fMPS
-    from functools import reduce
-
-    def get_singular_values(qtn):
-        L = qtn.num_tensors
-        middle_site = qtn.tensors[L//2 -1]
-
-        site_data = middle_site.data.squeeze()
-        d, i, j = site_data.shape
-        reshaped_data = site_data.reshape(d*i, j)
-
-        U, S, Vd = svd(reshaped_data)
-        return S
-
-    def get_singular_values_fmps(ftn):
-        L = ftn.L
-        middle_site = ftn.data[L//2 -1]
-
-        site_data = middle_site
-        d, i, j = site_data.shape
-        reshaped_data = site_data.reshape(d*i, j)
-
-        U, S, Vd = svd(reshaped_data)
-        return S
-
-    def get_sum_states(mps_images, labels):
-
-        def add_mpss(a, b):
-            return a.add(b)
-
-        mps_images_data = [[site.data for site in i.tensors] for i in mps_images]
-        fMPSs = [fMPS(i) for i in mps_images_data]
-
-        #shape: num_classes, num_digit_in_class
-        sorted_fMPSs = [[fMPSs[i] for i in range(len(fMPSs)) if labels[i] == l] for l in list(set(labels))]
-
-        added_mpss = [reduce(add_mpss, digits) for digits in sorted_fMPSs]
-
-        return [i.left_canonicalise(D = 32) for i in added_mpss]
-
-    def get_batched_sum_states(mps_images, labels, batch_num, D):
-
-        def adding_mps_batches(list_to_add, D, batch_num, truncate=True):
-            # if batches are not of equal size, the remainder is added
-            # at the end- this is a MAJOR problem with equal weightings!
-
-            if len(list_to_add) % batch_num != 0:
-                if not truncate:
-                    raise Exception("Batches are not of equal size!")
-                else:
-                    trun_expo = int(np.log(len(list_to_add)) / np.log(batch_num))
-                    list_to_add = list_to_add[: batch_num ** trun_expo]
-            result = []
-
-            for i in range(int(len(list_to_add) / batch_num) + 1):
-                sub_list = list_to_add[batch_num * i : batch_num * (i + 1)]
-                if len(sub_list) > 0:
-                    result.append(reduce(add_mps_sublist, (D, sub_list)))
-            return result
-
-        def add_mps_sublist(*args):
-            """
-            :param args: tuple of B_D and MPOs to be added together
-            """
-
-            B_D = args[0]
-            sub_list_mpos = args[1]
-            N = len(sub_list_mpos)
-
-            c = sub_list_mpos[0]
-
-            for i in range(1, N):
-                c = c.add(sub_list_mpos[i])
-            return c.left_canonicalise(B_D)
-
-        mps_images_data = [[site.data for site in i.tensors] for i in mps_images]
-        fMPSs = [fMPS(i) for i in mps_images_data]
-
-        #shape: num_classes, num_digit_in_class
-        sorted_fMPSs = [[fMPSs[i] for i in range(len(fMPSs)) if labels[i] == l] for l in list(set(labels))]
-
-        flat_fMPSs = [item for sublist in sorted_fMPSs for item in sublist]
-
-        while len(flat_fMPSs) > 10:
-            flat_fMPSs = adding_mps_batches(flat_fMPSs, D, batch_num)
-
-        return flat_fMPSs
-
-    def evalulate_sum_states(sum_states, test_data, test_labels):
-        sum_states = [s for s in sum_states]
-        test_fmps = [fMPS([site.data for site in qtn_image.tensors]) for qtn_image in test_data]
-        predictions = [[abs(state.overlap(test)) for state in sum_states] for test in tqdm(test_fmps)]
-        print(test_labels)
-        print(predictions[:10])
-        #assert()
-
-
-
-        print(evaluate_classifier_top_k_accuracy(predictions, test_labels, 1))
-        assert()
-
-    num_samples = 1000#5329*10
-    D = 32
-    batch_num = 10#73
+    n_train_samples = 5421*10
+    #n_train_samples = 60000
+    #n_train_samples = 1000
+    n_test_samples = 10000
+    #n_test_samples = 1000
 
     x_train, y_train, x_test, y_test = load_data(
-        num_samples, shuffle=False, equal_numbers=True
+        n_train_samples,n_test_samples, shuffle=False, equal_numbers=True
+    )
+    x_train, y_train = arrange_data(x_train, y_train, arrangement='one class')
+
+    # MPS encode data
+    D_encode = 32
+    mps_train = mps_encoding(x_train, D_encode)
+    mps_test = mps_encoding(x_test, D_encode)
+
+
+    non_ortho_training_predictions = []
+    ortho_training_predictions = []
+    non_ortho_test_predictions = []
+    ortho_test_predictions = []
+
+    path = "mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{32}/"
+
+    sum_states = [load_qtn_classifier(path + f"digit_{i}") for i in range(10)]
+    sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in sum_states]
+
+    D_finals = range(2, 37, 2)
+    for D_final in tqdm(D_finals):
+
+        non_ortho_classifier_data = adding_centre_batches(sum_states_data, D_final, 10, orthogonalise = False)[0]
+        non_ortho_mpo_classifier = data_to_QTN(non_ortho_classifier_data.data).squeeze()
+
+        ortho_classifier_data = adding_centre_batches(sum_states_data, D_final, 10, orthogonalise = True)[0]
+        ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data).squeeze()
+
+        #print('Training predicitions: ')
+        non_ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+        ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+
+        #print('Test predicitions: ')
+        non_ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
+        ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
+
+
+        non_ortho_training_predictions.append(non_ortho_training_prediction)
+        ortho_training_predictions.append(ortho_training_prediction)
+        non_ortho_test_predictions.append(non_ortho_test_prediction)
+        ortho_test_predictions.append(ortho_test_prediction)
+
+        print('D_total non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
+        print('D_total ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
+        #assert()
+
+        np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_training_predictions_compressed", non_ortho_training_predictions)
+        np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_training_predictions_compressed", ortho_training_predictions)
+        np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_test_predictions", non_ortho_test_predictions)
+        np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_test_predictions", ortho_test_predictions)
+
+def get_D_encode_predictions():
+
+    n_train_samples = 1000
+    n_test_samples = 10000
+
+    x_train, y_train, x_test, y_test = load_data(
+        n_train_samples,n_test_samples, shuffle=False, equal_numbers=True
     )
 
-    mps_images = mps_encoding(x_train, D)
-    labels = y_train
+    # MPS encode data
+    D_encode = 32
+    mps_train = mps_encoding(x_train, D_encode)
+    mps_test = mps_encoding(x_test, D_encode)
 
-    #sum_states = get_sum_states(mps_images, labels)
-    batched_sum_states = get_batched_sum_states(mps_images, labels, batch_num, D)
+    non_ortho_test_predictions = []
+    ortho_test_predictions = []
+
+    D_encodes = range(2, 33, 2)
+    for D_final in [10,20,32]:
+        non_ortho_test_predictions = []
+        ortho_test_predictions = []
+
+        for D_encode in tqdm(D_encodes):
+
+            path = "mnist_mixed_sum_states/D_encode/" + f"sum_states_D_encode_{D_encode}/"
+            sum_states = [load_qtn_classifier(path + f"digit_{i}") for i in range(10)]
+            sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in sum_states]
 
 
-    evalulate_sum_states(batched_sum_states, mps_images, labels)
-    assert()
+            non_ortho_classifier_data = adding_centre_batches(sum_states_data, D_final, 10, orthogonalise = False)[0]
+            non_ortho_mpo_classifier = data_to_QTN(non_ortho_classifier_data.data).squeeze()
+            ortho_classifier_data = adding_centre_batches(sum_states_data, D_final, 10, orthogonalise = True)[0]
+            ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data).squeeze()
 
 
-    image_singular_values = [np.mean([get_singular_values(qtn) for qtn in np.array(mps_images)[labels == l]], axis = 0) for l in list(set(labels))]
-    sum_states_singular_values = [get_singular_values_fmps(ss) for ss in sum_states]
-    batched_sum_states_singular_values = [get_singular_values_fmps(ss) for ss in batched_sum_states]
+            #print('Test predicitions: ')
+            non_ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
+            ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
 
-    np.save('mean_img_singular_vals', np.mean(image_singular_values, axis = 0))
-    np.save('mean_sum_state_singular_vals', np.mean(sum_states_singular_values, axis = 0))
-    np.save('mean_batched_sum_state_singular_vals', np.mean(batched_sum_states_singular_values, axis = 0))
 
-    assert()
+            non_ortho_test_predictions.append(non_ortho_test_prediction)
+            ortho_test_predictions.append(ortho_test_prediction)
 
+            #print('D_encode non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
+            #print('D_encode ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
+            #assert()
+
+            #np.save('Classifiers/mnist_mixed_sum_states/D_encode/' + f"D_final_{D_final}_non_ortho_d_total_vs_test_predictions", non_ortho_test_predictions)
+            #np.save('Classifiers/mnist_mixed_sum_states/D_encode/' + f"D_final_{D_final}_ortho_d_total_vs_test_predictions", ortho_test_predictions)
+
+def get_D_batch_predictions():
+
+    n_train_samples = 1000
+    n_test_samples = 10000
+
+    x_train, y_train, x_test, y_test = load_data(
+        n_train_samples,n_test_samples, shuffle=False, equal_numbers=True
+    )
+
+    # MPS encode data
+    D_encode = 32
+    mps_test = mps_encoding(x_test, D_encode)
+
+    non_ortho_test_predictions = []
+    ortho_test_predictions = []
+
+    D_batches = range(2, 33, 2)
+    for D_final in [10,20,32]:
+        non_ortho_test_predictions = []
+        ortho_test_predictions = []
+
+        for D_batch in tqdm(D_batches):
+
+            path = "mnist_mixed_sum_states/D_batch/" + f"sum_states_D_batch_{D_batch}/"
+            sum_states = [load_qtn_classifier(path + f"digit_{i}") for i in range(10)]
+            sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in sum_states]
+
+
+            non_ortho_classifier_data = adding_centre_batches(sum_states_data, D_final, 10, orthogonalise = False)[0]
+            non_ortho_mpo_classifier = data_to_QTN(non_ortho_classifier_data.data).squeeze()
+            ortho_classifier_data = adding_centre_batches(sum_states_data, D_final, 10, orthogonalise = True)[0]
+            ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data).squeeze()
+
+
+            #print('Test predicitions: ')
+            non_ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
+            ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
+
+
+            non_ortho_test_predictions.append(non_ortho_test_prediction)
+            ortho_test_predictions.append(ortho_test_prediction)
+
+            #print('D_total non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
+            #print('D_total ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
+            #assert()
+
+            #np.save('Classifiers/mnist_mixed_sum_states/D_batch/' + f"D_final_{D_final}_non_ortho_d_total_vs_test_predictions", non_ortho_test_predictions)
+            #np.save('Classifiers/mnist_mixed_sum_states/D_batch/' + f"D_final_{D_final}_ortho_d_total_vs_test_predictions", ortho_test_predictions)
+
+"""
+Centre site functions
+"""
+
+def label_last_site_to_centre(qtn):
+    data = [site.data for site in qtn.tensors]
+    centre_index = len(data) // 2
+    data[-1], data[centre_index] = data[centre_index], data[-1]
+    return data
+
+def centred_bitstring_to_qtn(bitstrings_data):
+    from quimb.tensor.tensor_core import rand_uuid
+    import quimb.tensor as qtn
+    from oset import oset
+
+    q_product_states = []
+    for prod_state in bitstrings_data:
+        qtn_data = []
+        previous_ind = rand_uuid()
+        for j, site in enumerate(prod_state):
+            next_ind = rand_uuid()
+            tensor = qtn.Tensor(
+                site, inds=(f"s{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+            )
+            previous_ind = next_ind
+            qtn_data.append(tensor)
+        q_product_states.append(qtn.TensorNetwork(qtn_data))
+    return q_product_states
+
+def prepare_centred_batched_classifier(mps_train, labels, q_hairy_bitstrings, D_total, batch_nums):
+
+    train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
+    # Converting qMPOs into fMPOs
+    MPOs = [fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos]
+    MPOs = [mpo.compress_centre_one_site(None, False) for mpo in MPOs]
+
+    # Adding fMPOs together
+    i = 0
+    while len(MPOs) > 10:
+        batch_num = batch_nums[i]
+        MPOs = adding_centre_batches(MPOs, D_total, batch_num)
+        i += 1
+    return MPOs
+
+def adding_centre_batches(list_to_add, D, batch_num=2, orthogonalise=False):
+    # if batches are not of equal size, the remainder is added
+    # at the end- this is a MAJOR problem with equal weightings!
+
+    result = []
+    for i in range(int(len(list_to_add) / batch_num) + 1):
+        sub_list = list_to_add[batch_num * i : batch_num * (i + 1)]
+        if len(sub_list) > 0:
+            result.append(reduce(add_centre_sublist, ((D, orthogonalise), sub_list)))
+    return result
+
+def add_centre_sublist(*args):
+    """
+    :param args: tuple of B_D and MPOs to be added together
+    """
+
+    B_D = args[0][0]
+    ortho = args[0][1]
+    sub_list_mpos = args[1]
+    N = len(sub_list_mpos)
+
+    c = sub_list_mpos[0]
+
+    for i in range(1, N):
+        c = c.add(sub_list_mpos[i])
+
+    return c.compress_centre_one_site(B_D, orthogonalise=ortho)
+
+"""
+Stacking
+"""
+def mps_stacking(training_mps_predictions, test_mps_predictions, n_copies, y_train, y_test):
+
+    def generate_copy_state(QTN, n_copies):
+        initial_QTN = QTN
+        for _ in range(n_copies):
+            QTN = QTN | initial_QTN
+        return relabel_QTN(QTN)
+
+    def relabel_QTN(QTN):
+        qtn_data = []
+        previous_ind = rand_uuid()
+        for j, site in enumerate(QTN.tensors):
+            next_ind = rand_uuid()
+            tensor = qtn.Tensor(
+                site.data, inds=(f"k{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+            )
+            previous_ind = next_ind
+            qtn_data.append(tensor)
+        return qtn.TensorNetwork(qtn_data)
+
+    #Add n_copies of same prediction state
+    training_copied_predictions = [generate_copy_state(pred,n_copies) for pred in training_mps_predictions]
+    #training_copied_predictions = training_mps_predictions
+
+    #print(training_copied_predictions_1[0])
+    #print(training_copied_predictions_2[0])
+    #print((training_copied_predictions_1[0] @ training_copied_predictions_2[0]).data)
+    #a = training_copied_predictions_2[0].compress_all(inplace = True, cutoff = 1e-4)
+    #a = training_copied_predictions_1[0]
+    #print(a)
+    #contracted_qtn = (a ^ all).squeeze()
+    #c = 5
+    #M = contracted_qtn.fuse({'a': [f'k{i}' for i in range(c)], 'b': [f'k{i}' for i in range(c,8)]})
+    #print(M)
+    #U,S,V = svd(M.data)
+    #print(np.diag(S))
+    #assert()
+
+    #Create bitstrings to add onto copied states
+    possible_labels = list(set(y_train))
+    n_sites = training_copied_predictions[0].num_tensors
+
+    hairy_bitstrings_data = create_hairy_bitstrings_data(
+        possible_labels, n_sites
+    )
+    q_hairy_bitstrings = bitstring_data_to_QTN(
+        hairy_bitstrings_data, n_sites
+    )
+    hairy_bitstrings_data = [label_last_site_to_centre(b) for b in q_hairy_bitstrings]
+    q_hairy_bitstrings = centred_bitstring_to_qtn(hairy_bitstrings_data)
+
+    """
+    train_mpos = mpo_encoding(training_copied_predictions, y_train, q_hairy_bitstrings)
+    train_fmpos = np.array([fMPO([site.data for site in mpo.tensors]) for mpo in train_mpos])
+
+    print('Batch adding predictions...')
+    sum_states = []
+    for l in tqdm(possible_labels):
+        sub_list_mpo = train_fmpos[y_train == l][0]
+        for i in tqdm(train_fmpos[y_train == l][1:]):
+            sub_list_mpo = sub_list_mpo.add(i).compress_centre_one_site(4, orthogonalise=False)
+        sum_states.append(sub_list_mpo)
+
+    fMPO_classifier = sum_states[0]
+    for s in sum_states[1:]:
+        fMPO_classifier = fMPO_classifier.add(s)
+
+    fMPO_stacking_unitary = fMPO_classifier.compress_centre_one_site(4, orthogonalise=True)
+    stacking_unitary = data_to_QTN(fMPO_stacking_unitary.data)
+    """
+
+    #Parameters for batch adding label predictions
+    D_batch = 32
+    batch_nums = [4, 8, 13, 13]
+    #batch_nums = [3, 13, 39, 139]
+    #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
+    #batch_nums = [10]
+
+    #Batch adding copied predictions to create sum states
+    print('Batch adding predictions...')
+    sum_states = prepare_centred_batched_classifier(training_copied_predictions, y_train, q_hairy_bitstrings, D_batch, batch_nums)
+
+    #Batch adding sum states to create stacking unitary
+    D_final = 32
+    batch_final = 10
+    ortho_at_end = True
+    classifier_data = adding_centre_batches(sum_states, D_final, batch_final, orthogonalise = ortho_at_end)[0]
+    stacking_unitary = data_to_QTN(classifier_data.data)#.squeeze()
+
+    #Evaluate mps stacking unitary
+
+    #Generate test copy states
+    #print('Encoding test predictions...')
+    #outer_test_states = test_label_qubits
+    #for k in range(n_copies):
+    #    outer_test_states = np.array([np.kron(i, j) for i,j in zip(outer_test_states, test_label_qubits)])
+
+    #mps_test = mps_encoding(test_label_qubits, None)
+    #mps_test = mps_encoding(outer_test_states, None)
+    test_copied_predictions = [generate_copy_state(pred,n_copies) for pred in test_mps_predictions]
+    #test_copied_predictions = mps_test
+
+
+    #Perform overlaps
+    print('Performing overlaps...')
+    stacked_predictions = np.array([np.abs((mps_image.H.squeeze() @ stacking_unitary.squeeze()).data) for mps_image in tqdm(test_copied_predictions)])
+
+    result = evaluate_classifier_top_k_accuracy(stacked_predictions, y_test, 1)
+    #Compute Accuracy
+    print()
+    #print('Test accuracy before:', evaluate_classifier_top_k_accuracy(test_label_qubits, y_test, 1))
+    print('Test accuracy U:', result)
+    print()
+
+    return result
+
+    """
+    mps_test = mps_encoding(test_label_qubits, 4)
+
+    test_copied_predictions_2 = [generate_copy_state(pred,n_copies) for pred in mps_test]
+
+    #Perform overlaps
+    print('Performing overlaps...')
+    stacked_predictions = np.array([np.abs((mps_image.H.squeeze() @ stacking_unitary.squeeze()).data) for mps_image in tqdm(test_copied_predictions_2)])
+
+    #Compute Accuracy
+    print()
+    print('Test accuracy before:', evaluate_classifier_top_k_accuracy(test_label_qubits, y_test, 1))
+    print('Test accuracy U:', evaluate_classifier_top_k_accuracy(stacked_predictions, y_test, 1))
+    print()
+    """
+
+def tensor_network_stacking_experiment(dataset, max_n_copies):
+
+    #Upload Data
+    training_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]#.astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy')#.astype(np.int8)
+    training_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in training_label_qubits])
+
+    training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 5408]) for i in range(10)]))
+    y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 5408]) for i in range(10)]))
+    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 10]) for i in range(10)]))
+    #y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 10]) for i in range(10)]))
+
+    #outer_ket_states = training_label_qubits
+    #for k in range(n_copies):
+    #    outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, training_label_qubits)])
+
+    #Convert predictions to MPS
+    print('Encoding predictions...')
+    D_encode = 32
+    training_mps_predictions = mps_encoding(training_label_qubits, None)
+    #training_mps_predictions = mps_encoding(outer_ket_states, D_encode)
+
+    test_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions.npy')[15]
+    y_test = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions_labels.npy')
+    test_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in test_label_qubits])
+
+    #test_label_qubits = test_label_qubits[:100]
+    #y_test = y_test[:100]
+
+    test_mps_predictions = mps_encoding(test_label_qubits, None)
+
+    for i in range(max_n_copies):
+        result = mps_stacking(training_mps_predictions, test_mps_predictions, i, y_train, y_test)
+        np.save('tensor_network_stacking', result)
 
 
 
 if __name__ == "__main__":
-
-    #mps_image_singular_values()
-    #Biggest equal size is n_train = 5329 * 10 with batch_num = 73
-    #Can use n_train = 4913 with batch_num = 17
-    #num_samples = 5329*10
-    #batch_num = 73
+    get_D_final_predictions()
+    #tensor_network_stacking_experiment('mnist', 16)
+    assert()
+    #obtain_D_encode_preds()
+    #single_image_sv, sum_state_sv = mps_image_singular_values()
     num_samples = 1000
-    batch_num = 10
+    #batch_nums = [5, 2, 5, 2, 10]
+    batch_nums = [10, 10, 10]
+    #num_samples = 5421*10
+    #batch_nums = [3, 13, 139, 10]
+    #num_samples = 6000*10
+    #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
     ortho_at_end = False
-    #prep_sum_states = False
-
     D_total = 32
+    #print('COLLECTING D_TOTAL SUM STATES')
     D_encode = D_total
     D_batch = D_total
     D_final = D_total
     D = (D_encode, D_batch, D_final)
-    #deterministic_mpo_classifier_experiment(1000, 10)
-    #assert()
-    #for D in tqdm(range(33, 51)):
-    #    print(f'Bond Dimension: {D}')
-    data, classifier, bitstrings = initialise_experiment(
+
+    data, classifiers, bitstrings = initialise_experiment(
                 num_samples,
                 D,
                 arrangement='one class',
                 initialise_classifier=True,
                 prep_sum_states = True,
-                initialise_classifier_settings=(batch_num, ortho_at_end),
+                centre_site = True,
+                initialise_classifier_settings=([10,10,10], ortho_at_end),
             )
     mps_images, labels = data
-    classifier, sum_states = classifier
+    classifier, sum_states = classifiers
+    compute_confusion_matrix(bitstrings)
+    assert()
+    #path = "Classifiers/mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{D_total}/"
+    #os.makedirs(path, exist_ok=True)
+    #[save_qtn_classifier(s , "mnist_mixed_sum_states/D_total/" + f"sum_states_D_total_{D_total}/" + f"digit_{i}") for i, s in enumerate(sum_states)]
+    #assert()
+    #d_batch_vs_acc(bitstrings)
+    #assert()
+    #generate_classifier_images(sum_states)
+    #sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in sum_states]
+    #sum_states = [sum_state.compress_one_site(D = D_final, orthogonalise = True) for sum_state in sum_states_data]
+    #sum_states = [data_to_QTN(sum_state.data) for sum_state in sum_states]
+
+    #compute_confusion_matrix(bitstrings)
+    #assert()
+    """
+    d_final_vs_acc(bitstrings)
+    assert()
+    #for i, sum_state in enumerate(sum_states):
+    #    save_qtn_classifier(sum_state, f'fashion_mnist_sum_states/sum_state_digit_{i}')
+    #assert()
+    """
+
+    sum_states = [load_qtn_classifier("mnist_mixed_sum_states/" + f"sum_states_D_total_{32}/" + f"digit_{i}") for i in range(10)]
+    sum_states_data = [fMPO([i.data for i in s.tensors]) for s in sum_states]
+
+    classifier_data = adding_centre_batches(sum_states_data, 32, 10, orthogonalise = False)[0]
+    classifier = data_to_QTN(classifier_data.data)
+
+    #label_preds = (mps_images[0].H.squeeze() @ sum_states[1].squeeze()).data
+    #print(label_preds)
+    #print(np.sum([abs(i) for i in label_preds]))
+    #assert()
+
+    #sum_state_predictions = [[(mps_image.H.squeeze() @ s.squeeze()).norm() for s in sum_states] for mps_image in tqdm(mps_images)]
+    #sum_state_predictions = [[(mps_image.H.squeeze() @ (s.squeeze() @ b.squeeze())) for s,b in zip(sum_states, bitstrings)] for mps_image in tqdm(mps_images)]
+    #sum_state_predictions = [[abs(mps_image.H.squeeze() @ s.squeeze()) for s in sum_states] for mps_image in tqdm(mps_images)]
+    #print(evaluate_classifier_top_k_accuracy(sum_state_predictions, labels, 1))
+    #assert()
 
     predictions = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_images)])
     print(evaluate_classifier_top_k_accuracy(predictions, labels, 1))
 
     assert()
-    d_final_vs_acc(mps_images, labels, bitstrings)
-    assert()
-
-
-    x_train, y_train, x_test, y_test = load_data(
-        100,10000, shuffle=False, equal_numbers=True
-    )
-    D_test = 32
-    #x_test = [x_test[label == y_test][0] for label in range(10)]
-    #y_test = np.array(range(10))
-    mps_test = mps_encoding(x_test, D_test)
-
-    classifier = load_qtn_classifier('Big_Classifiers/non_ortho_mpo_classifier_32').squeeze()
-    test_preds = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in tqdm(mps_test)])
-    np.save('models/initial_test_predictions_non_ortho_mpo_classifier', test_preds)
-
-    test_accuracy = evaluate_classifier_top_k_accuracy(test_preds, y_test, 1)
-    print('Initial test accuracy: ', test_accuracy)
-
-    import tensorflow as tf
-    model = tf.keras.models.load_model('models/non_ortho_big_dataset_D_32')
-    trained_test_predictions = model.predict(test_preds)
-    np.save('models/trained_test_predictions_non_ortho_mpo_classifier', trained_test_predictions)
-
-    test_accuracy = evaluate_classifier_top_k_accuracy(trained_test_predictions, y_test, 1)
-    print('Trained test accuracy:', test_accuracy)
-    assert()
-
-    #classical_stacking(mps_images, labels, classifier.squeeze(), bitstrings)
-    n_copies = 2
-    v_col = True
-    #U_preds = efficent_deterministic_quantum_stacking(labels, bitstrings, n_copies, classifier, v_col=v_col)
-    #U = deterministic_quantum_stacking(labels, bitstrings, n_copies, classifier, v_col=v_col)
-    #U_param = parameterise_deterministic_U(U)
-    #quantum_stacking_with_pennylane(0, U_preds = None)#, U_param)
-    assert()
-    state_preparation_pennylane(U)
-    #U = deterministic_quantum_stacking(labels, bitstrings, n_copies, classifier, v_col=v_col)
-    assert()
-    #assert()
-
-    quantum_stacking_with_copy_qubits(classifier, bitstrings, mps_images, labels, 1, U_param)
-    assert()
-
-
-    all_classes_experiment(
-        classifier,
-        mps_images,
-        bitstrings,
-        labels,
-        classifier_predictions,
-        cross_entropy_loss,
-        "cross_entropy_random",
-        #'abs_stoudenmire_loss'
-    )

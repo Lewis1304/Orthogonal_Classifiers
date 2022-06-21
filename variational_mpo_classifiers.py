@@ -22,7 +22,7 @@ from collections import Counter
 
 from oset import oset
 from xmps.fMPS import fMPS
-from fMPO_reduced import fMPO
+from fMPO import fMPO
 from tools import *
 
 """
@@ -48,7 +48,6 @@ def create_hairy_bitstrings_data(
         ]
     )
     untruncated = np.append(other_sites, hairy_sites, axis=1)
-
     return untruncated
 
 

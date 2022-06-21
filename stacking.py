@@ -1,24 +1,19 @@
-import quimb as qu
-import quimb.tensor as qtn
 from xmps.svd_robust import svd
 from scipy.linalg import polar
 import numpy as np
-from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, classifier_predictions
-from deterministic_mpo_classifier import unitary_extension
-import autograd.numpy as anp
-import tensorflow as tf
-
-import pennylane as qml
-from pennylane import numpy as p_np
-
-from pennylane.templates.state_preparations import MottonenStatePreparation
-from pennylane.templates.layers import StronglyEntanglingLayers
+from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, classifier_predictions, mps_encoding
+from plot_results import produce_psuedo_sum_states, load_brute_force_permutations
+from tools import load_data
+from scipy import sparse
+import qutip
+import matplotlib.pyplot as plt
+from experiments import create_experiment_bitstrings
 
 
 from tqdm import tqdm
 
-def classical_stacking(mps_images, labels, classifier, bitstrings):
-
+def classical_stacking():
+    """
     #Ancillae start in state |00...>
     #n=0
     #ancillae_qubits = np.eye(2**n)[0]
@@ -29,11 +24,12 @@ def classical_stacking(mps_images, labels, classifier, bitstrings):
     #Create predictions
     training_predictions = np.array([abs((mps_image.H @ classifier).squeeze().data) for mps_image in mps_images])
     np.save('ortho_big_training_predictions_D_32',training_predictions)
-
     training_predictions = np.load('ortho_big_training_predictions_D_32.npy')
     labels = np.load('big_labels.npy')
     training_acc = evaluate_classifier_top_k_accuracy(training_predictions, labels, 1)
     print('Training Accuracy:', training_acc)
+    """
+
     """
     x_train, y_train, x_test, y_test = load_data(
         100,10000, shuffle=False, equal_numbers=True
@@ -52,6 +48,10 @@ def classical_stacking(mps_images, labels, classifier, bitstrings):
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.summary()
     """
+    training_predictions = np.load('Classifiers/fashion_mnist/initial_training_predictions_ortho_mpo_classifier.npy')
+    y_train = np.load('Classifiers/fashion_mnist/big_dataset_training_labels.npy')
+
+
     inputs = tf.keras.Input(shape=(training_predictions.shape[1],))
     #inputs = tf.keras.Input(shape=(qtn_prediction_and_ancillae_qubits.shape[1],))
     outputs = tf.keras.layers.Dense(10, activation = 'sigmoid')(inputs)
@@ -69,804 +69,20 @@ def classical_stacking(mps_images, labels, classifier, bitstrings):
 
     history = model.fit(
         training_predictions,
-        labels,
-        epochs=10000,
+        y_train,
+        epochs=2000,
         batch_size = 32,
         verbose = 1
     )
-    model.save('models/ortho_big_dataset_D_32')
-
-    #trained_training_predictions = model.predict(training_predictions)
+    #model.save('models/ortho_big_dataset_D_32')
+    test_preds = np.load('Classifiers/fashion_mnist/initial_test_predictions_ortho_mpo_classifier.npy')
+    y_test = np.load('Classifiers/fashion_mnist/big_dataset_test_labels.npy')
+    trained_test_predictions = model.predict(test_preds)
     #np.save('final_label_qubit_states_4',trained_training_predictions)
 
     #np.save('trained_predicitions_1000_classifier_32_1000_train_images', trained_training_predictions)
-    #accuracy = evaluate_classifier_top_k_accuracy(trained_training_predictions, labels, 1)
-    #print(accuracy)
-
-def quantum_stacking_with_ancillae(classifier, bitstrings, mps_images, labels, loss_func, loss_name):
-    import quimb as qu
-    import quimb.tensor as qtn
-
-    def ansatz_circuit_U3(n, depth, gate2='CX', **kwargs):
-        """Construct a circuit of single qubit and entangling layers.
-        """
-        def single_qubit_layer(circ, gate_round=None):
-            """Apply a parametrizable layer of single qubit ``U3`` gates.
-            """
-            for i in range(circ.N):
-                # initialize with random parameters
-                #params = qu.randn(3, dist='uniform')
-                params = np.zeros(3)
-                circ.apply_gate(
-                    'U3', *params, i,
-                    gate_round=gate_round, parametrize=True)
-
-        def two_qubit_layer(circ, gate2='CX', reverse=False, gate_round=None):
-            """Apply a layer of constant entangling gates.
-            """
-            regs = range(0, circ.N - 1)
-            if reverse:
-                regs = reversed(regs)
-
-            for i in regs:
-                circ.apply_gate(
-                    gate2, i, i + 1, gate_round=gate_round)
-
-        circ = qtn.Circuit(n, **kwargs)
-
-        for r in range(depth):
-            # single qubit gate layer
-            single_qubit_layer(circ, gate_round=r)
-
-            # alternate between forward and backward CZ layers
-            two_qubit_layer(
-                circ, gate2=gate2, gate_round=r, reverse=r % 2 == 0)
-
-        # add a final single qubit layer
-        single_qubit_layer(circ, gate_round=r + 1)
-
-        return circ
-
-    def ansatz_circuit_SU4(n, depth, **kwargs):
-        """Construct a circuit of SU4s
-        """
-
-        def single_qubit_layer(circ, gate_round=None):
-            """Apply a parametrizable layer of single qubit ``U3`` gates.
-            """
-            for i in range(circ.N):
-                # initialize with random parameters
-                #params = np.zeros(3)
-                params = qu.randn(3, dist='uniform')
-                circ.apply_gate(
-                    'U3', *params, i,
-                    gate_round=gate_round, parametrize=True)
-
-
-        def two_qubit_layer(circ, gate_round=None):
-            """Apply a layer of constant entangling gates.
-            """
-            regs = range(0, circ.N - 1)
-            params = qu.randn(15, dist='uniform')
-            #params = np.zeros(15)
-
-            for i in regs:
-                circ.apply_gate(
-                    'su4',*params, i, i + 1, gate_round=gate_round, parametrize = True, contract = False)
-
-        circ = qtn.Circuit(n, **kwargs)
-
-        for r in range(depth):
-            # single qubit gate layer
-            #single_qubit_layer(circ, gate_round=r)
-
-            # alternate between forward and backward CZ layers
-            two_qubit_layer(
-                circ, gate_round=r)
-
-        # add a final single qubit layer
-        single_qubit_layer(circ, gate_round=r + 1)
-
-        return circ
-
-    def overlap(predicition, V, bitstring):
-        return (predicition.squeeze().H @ (V @ bitstring.squeeze())).norm()#**2
-
-    def optimiser(circ):
-        optmzr = qtn.TNOptimizer(
-                circ,  # our initial input, the tensors of which to optimize
-                loss_fn = lambda V: loss(V, qtn_prediction_and_ancillae_qubits, qtn_bitstrings, labels),
-                norm_fn=normalize_tn,
-                autodiff_backend="autograd",  # {'jax', 'tensorflow', 'autograd'}
-                optimizer="nadam",  # supplied to scipy.minimize
-                )
-        return optmzr
-
-    #Reshape label site into qubit states
-    n_label_qubits = 4
-    n_ancillae =  n_label_qubits
-    n_total = n_ancillae + n_label_qubits
-
-    bitstrings_qubits = [bitstring.squeeze().tensors[-1].data.reshape(2,2,2,2) for bitstring in bitstrings]
-    qtn_bitstrings = [qtn.Tensor(bitstring_qubits, inds = [f'b{n_total-4}', f'b{n_total-3}', f'b{n_total-2}', f'b{n_total-1}']) for bitstring_qubits in bitstrings_qubits]
-
-
-    #Ancillae start in state |00...>
-    ancillae_qubits = np.eye(2**n_ancillae)[0]
-    #ancillae_qubits = np.ones(2**n_ancillae) / (2**(n_ancillae/2))
-    #Tensor product ancillae with predicition qubits
-    #Amount of ancillae equal to amount of predicition qubits
-    qtn_prediction_and_ancillae_qubits = [qtn.Tensor(np.kron(ancillae_qubits, (mps_image.H @ classifier).squeeze().data).reshape(*[2]*n_total), inds = [f'k{i}' for i in range(n_total)]) for mps_image in mps_images]
-    #Normalise predictions
-    qtn_prediction_and_ancillae_qubits = [i/(i.H @ i)**0.5 for i in qtn_prediction_and_ancillae_qubits]
-
-
-    circ = ansatz_circuit_U3(n_total, n_total)
-    V = circ.uni
-    #V.draw(color=[f'ROUND_{i}' for i in range(n_total + 1)], show_inds=True, show_tags = False)
-    #V.draw(color=['U3', 'SU4'], show_inds=True)
-
-    #test = (V.contract(all) & qtn_bitstrings[0]) & qtn_prediction_and_ancillae_qubits[0]
-    #print(test.contract(all).data)
-    #test.draw(show_tags = False)
-    #print(qtn_prediction_and_ancillae_qubits[0].H @ qtn_prediction_and_ancillae_qubits[0])
-    #print(test.H @ test)
-    print(f'Loss function: {loss_name}')
-
-    predictions = [[overlap(p, V, b) for b in qtn_bitstrings] for p in qtn_prediction_and_ancillae_qubits]
-    #print(predictions)
-    accuracies = [evaluate_classifier_top_k_accuracy(predictions, labels, 1)]
-    losses = [loss_func(V, qtn_prediction_and_ancillae_qubits, qtn_bitstrings, labels)]
-    print(f'Accuracy before: {accuracies[0]}')
-    assert()
-    for _ in tqdm(range(1)):
-
-        tnopt = qtn.TNOptimizer(
-        V,                        # the tensor network we want to optimize
-        loss_func,                     # the function we want to minimize
-        loss_kwargs = {'mps_train': qtn_prediction_and_ancillae_qubits,
-                        'q_hairy_bitstrings': qtn_bitstrings,
-                        'y_train': labels},
-        tags=['U3'],              # only optimize U3 tensors
-        autodiff_backend='autograd',   # use 'autograd' for non-compiled optimization
-        optimizer='nadam',     # the optimization algorithm
-        )
-
-        V = tnopt.optimize_basinhopping(n=500, nhop=10)
-
-        losses.append(tnopt.loss)
-        predictions = [[overlap(p, V, b) for b in qtn_bitstrings] for p in qtn_prediction_and_ancillae_qubits]
-        accuracies.append(evaluate_classifier_top_k_accuracy(predictions, labels, 1))
-        np.save(f'losses_{loss_name}_su4', losses)
-        np.save(f'accuracies_{loss_name}_su4', accuracies)
-
-
-    #predictions = [[overlap(p, V_opt, b) for b in qtn_bitstrings] for p in qtn_prediction_and_ancillae_qubits]
-    #accuracies = [evaluate_classifier_top_k_accuracy(predictions, labels, 1)]
-    #print(f'Accuracy after: {accuracies[0]}')
-
-def quantum_stacking_with_copy_qubits(classifier, bitstrings, mps_images, labels, n_copies, U_param = None):
-    import quimb as qu
-    import quimb.tensor as qtn
-
-    """
-    Alternating U3 and CX Gates
-    Depth inc. one layer of each
-    """
-    def ansatz_circuit_U3(n, depth, gate2='CX', **kwargs):
-        """Construct a circuit of single qubit and entangling layers.
-        """
-        def single_qubit_layer(circ, gate_round=None):
-            """Apply a parametrizable layer of single qubit ``U3`` gates.
-            """
-            for i in range(circ.N):
-                # initialize with random parameters
-                #params = qu.randn(3, dist='uniform')
-                params = np.zeros(3)
-                circ.apply_gate(
-                    'U3', *params, i,
-                    gate_round=gate_round, parametrize=True)
-
-        def two_qubit_layer(circ, gate2='CX', reverse=False, gate_round=None):
-            """Apply a layer of constant entangling gates.
-            """
-            regs = range(0, circ.N - 1)
-            if reverse:
-                regs = reversed(regs)
-
-            for i in regs:
-                circ.apply_gate(
-                    gate2, i, i + 1, gate_round=gate_round)
-
-        circ = qtn.Circuit(n, **kwargs)
-
-        for r in range(depth):
-            # single qubit gate layer
-            single_qubit_layer(circ, gate_round=r)
-
-            # alternate between forward and backward CZ layers
-            two_qubit_layer(
-                circ, gate2=gate2, gate_round=r, reverse=r % 2 == 0)
-
-        # add a final single qubit layer
-        single_qubit_layer(circ, gate_round=r + 1)
-
-        return circ
-
-    """
-    General SU4 gate layers. W/ U3 layer at end
-    """
-    def ansatz_circuit_SU4(n, depth, **kwargs):
-        """Construct a circuit of SU4s
-        """
-
-        def single_qubit_layer(circ, gate_round=None):
-            """Apply a parametrizable layer of single qubit ``U3`` gates.
-            """
-            for i in range(circ.N):
-                # initialize with random parameters
-                #params = np.zeros(3)
-                params = qu.randn(3, dist='uniform')
-                circ.apply_gate(
-                    'U3', *params, i,
-                    gate_round=gate_round, parametrize=True)
-
-
-        def two_qubit_layer(circ, gate_round=None):
-            """Apply a layer of constant entangling gates.
-            """
-            regs = range(0, circ.N - 1)
-            params = qu.randn(15, dist='uniform')
-            #params = np.zeros(15)
-
-            for i in regs:
-                circ.apply_gate(
-                    'su4',*params, i, i + 1, gate_round=gate_round, parametrize = True, contract = False)
-
-        circ = qtn.Circuit(n, **kwargs)
-
-        for r in range(depth):
-            two_qubit_layer(
-                circ, gate_round=r)
-
-        # add a final single qubit layer
-        single_qubit_layer(circ, gate_round=r + 1)
-
-        return circ
-
-    """
-    Overlap between:
-    label qubits and copies (predicition)
-    Circuit (V)
-    Bitstring, with post-selection of copies on |000..>.
-    If tracing over copy states, need to include norm()
-    """
-    def overlap(predicition, V, bitstring):
-        return (predicition.squeeze().H @ (V @ bitstring.squeeze())).norm()#**2
-
-    """
-    Cross Entropy Loss function.
-    Predictions are not normalized
-    """
-    def loss_func(classifier, mps_train, q_hairy_bitstrings, y_train):
-        overlaps = [
-            anp.log(overlap(mps_train[i], classifier, q_hairy_bitstrings[y_train[i]]) ) for i in range(len(mps_train))]
-        return -np.sum(overlaps) / len(mps_train)
-        """
-        #im_ov = [(p.squeeze().H @ classifier) for p in mps_train]
-        #predictions = [[(pv @ b.squeeze()).norm() for b in q_hairy_bitstrings] for pv in im_ov]
-        predictions = [[overlap(p, classifier, b) for b in q_hairy_bitstrings] for p in mps_train]
-        n_predicitions = [i/anp.sqrt(np.dot(i,i)) for i in predictions]
-        overlaps = [anp.log(p[i]) for p, i in zip(predictions, y_train)]
-        return -np.sum(overlaps) / len(mps_train)
-        """
-
-    """
-    Parameters for experiment.
-    n_copies = total number of copy states.
-    """
-    if U_param is not None:
-        n_copies = 1
-    n_label_qubits = int(np.log2(bitstrings[0].squeeze().tensors[-1].data.shape)[0])
-    n_total = (n_copies * n_label_qubits) + n_label_qubits
-
-    """
-    Post select copy qubits in |000..> state.
-    """
-    #ancillae_qubits = np.eye(2**(n_copies * n_label_qubits))[0]
-    #bitstrings_qubits = [np.kron(ancillae_qubits, bitstring.squeeze().tensors[-1].data).reshape(*[2]*n_total) for bitstring in bitstrings]
-    #qtn_bitstrings = [qtn.Tensor(bitstring_qubits, inds = [f'b{i}' for i in range(n_total)]) for bitstring_qubits in bitstrings_qubits]
-
-    """
-    Trace over all copy qubits state
-    """
-    bitstrings_qubits = [bitstring.squeeze().tensors[-1].data.reshape(*[2]*n_label_qubits) for bitstring in bitstrings]
-    #qtn_bitstrings = [qtn.Tensor(bitstring_qubits, inds = [f'b{n_total-4}', f'b{n_total-3}', f'b{n_total-2}', f'b{n_total-1}']) for bitstring_qubits in bitstrings_qubits]
-    qtn_bitstrings = [qtn.Tensor(bitstring_qubits, inds = [f'b{n_total-4}', f'b{n_total-3}', f'b{n_total-2}', f'b{n_total-1}']) for bitstring_qubits in bitstrings_qubits]
-
-    """
-    Generate prediction states
-    """
-    prediction_qubits = [(mps_image.H @ classifier).squeeze().data for mps_image in mps_images]
-    """
-    Normalise predictions
-    """
-    prediction_qubits = [i/np.sqrt(np.dot(i,i)) for i in prediction_qubits]
-
-
-    initial_incorrect_predictions = prediction_qubits#[prediction_qubits[6], prediction_qubits[8], prediction_qubits[9]]
-    incorrect_labels = labels#[labels[6], labels[8], labels[9]]
-
-    np.save('results/stacking/initial_incorrect_predictions', initial_incorrect_predictions)
-    np.save('results/stacking/incorrect_labels', incorrect_labels)
-
-
-    """
-    Construct input state.
-    I.e. tensor product label qubit with copies
-    """
-    prediction_and_copy_qubits = prediction_qubits
-    for k in range(n_copies):
-        prediction_and_copy_qubits = [np.kron(i, j) for i,j in zip(prediction_and_copy_qubits, prediction_qubits)]
-    qtn_prediction_and_copy_qubits = [qtn.Tensor(j.reshape(*[2]*n_total), inds = [f'k{i}' for i in range(n_total)]) for j in prediction_and_copy_qubits]
-
-    """
-    #Log depth. circuit
-    """
-    depth = int(np.ceil(np.log2(n_total)))
-    """
-    #Round to nearest power of 2. (means identity gives original result otherwise bitflips)
-    """
-    if depth % 2 != 0:
-        depth += 1
-
-    if U_param is not None:
-        V = U_param
-    else:
-        circ = ansatz_circuit_U3(n_total, depth)
-        V = circ.get_uni(transposed=True)
-    #V.draw(color=[f'ROUND_{i}' for i in range(n_total + 1)], show_inds=True, show_tags = False)
-    #V.draw(color=['U3', 'CX'], show_inds=True)
-
-    """
-    Collect predictions from circuit.
-    Should be same as initial, since V is identity
-    """
-    predictions = [[overlap(p, V, b) for b in qtn_bitstrings] for p in tqdm(qtn_prediction_and_copy_qubits)]
-    """
-    Normalise predicitions (after measurement). Doesn't affect accuracy
-    """
-    predictions = [i/np.sqrt(np.dot(i,i)) for i in predictions]
-
-    #print(np.round(predictions[6],5))
-    #print(predictions)
-    """
-    Initial accuracy & loss
-    """
-    accuracies = [evaluate_classifier_top_k_accuracy(predictions, labels, 1)]
-    losses = [loss_func(V, qtn_prediction_and_copy_qubits, qtn_bitstrings, labels)]
-    print(f'Accuracy before: {accuracies[0]}')
-
-    for _ in tqdm(range(1)):
-
-        tnopt = qtn.TNOptimizer(
-        V,                        # the tensor network we want to optimize
-        loss_func,                     # the function we want to minimize
-        loss_kwargs = {'mps_train': qtn_prediction_and_copy_qubits,
-                        'q_hairy_bitstrings': qtn_bitstrings,
-                        'y_train': labels},
-        tags=['SU4'],              # only optimize U3 tensors
-        autodiff_backend='autograd',   # use 'autograd' for non-compiled optimization
-        optimizer='nadam',     # the optimization algorithm
-        )
-
-        V = tnopt.optimize(100)#_basinhopping(n=10, nhop=10)
-
-        losses.append(tnopt.losses)
-        predictions = [[overlap(p, V, b) for b in qtn_bitstrings] for p in qtn_prediction_and_copy_qubits]
-        predictions = [i/np.sqrt(np.dot(i,i)) for i in predictions]
-        accuracies.append(evaluate_classifier_top_k_accuracy(predictions, labels, 1))
-
-        np.save('results/stacking/variational_incorrect_predictions_test_3', predictions)
-        np.save(f'results/stacking/quantum_stacking_2_losses_test_3', losses)
-        np.save(f'results/stacking/quantum_stacking_2_accuracies_test_3', accuracies)
-
-
-    #predictions = [[overlap(p, V_opt, b) for b in qtn_bitstrings] for p in qtn_prediction_and_ancillae_qubits]
-    #accuracies = [evaluate_classifier_top_k_accuracy(predictions, labels, 1)]
-    #print(f'Accuracy after: {accuracies[0]}')
-
-def parameterise_deterministic_U(U):
-
-    """
-    General SU4 gate layers.
-    """
-    def ansatz_circuit_SU4(n, depth, **kwargs):
-        """Construct a circuit of SU4s
-        """
-
-        def two_qubit_layer(circ, gate_round=None):
-            """Apply a layer of constant entangling gates.
-            """
-            regs = range(0, circ.N - 1)
-            params = qu.randn(15, dist='uniform')
-            #params = np.zeros(15)
-
-            for i in regs:
-                circ.apply_gate(
-                    'su4',*params, i, i + 1, gate_round=gate_round, parametrize = True, contract = False)
-
-        circ = qtn.Circuit(n, **kwargs)
-
-        for r in range(depth):
-            two_qubit_layer(
-                circ, gate_round=r)
-
-        return circ
-
-    """
-    Brick wall like circuit
-    """
-    def ansatz_circuit_U3(n, depth, gate2='CX', **kwargs):
-        """Construct a circuit of single qubit and entangling layers.
-        """
-        def single_qubit_layer(circ, gate_round=None):
-            """Apply a parametrizable layer of single qubit ``U3`` gates.
-            """
-            for i in range(circ.N):
-                # initialize with random parameters
-                params = qu.randn(3, dist='uniform')
-                #params = np.zeros(3)
-                circ.apply_gate(
-                    'U3', *params, i,
-                    gate_round=gate_round, parametrize=True)
-
-        def two_qubit_layer(circ, gate2='CX', reverse=False, gate_round=None):
-            """Apply a layer of constant entangling gates.
-            """
-            regs = range(0, circ.N - 1)
-            if reverse:
-                regs = reversed(regs)
-
-            for i in regs:
-                circ.apply_gate(
-                    gate2, i, i + 1, gate_round=gate_round)
-
-        circ = qtn.Circuit(n, **kwargs)
-
-        for r in range(depth):
-            # single qubit gate layer
-            single_qubit_layer(circ, gate_round=r)
-
-            # alternate between forward and backward CZ layers
-            two_qubit_layer(
-                circ, gate2=gate2, gate_round=r, reverse=r % 2 == 0)
-
-        # add a final single qubit layer
-        single_qubit_layer(circ, gate_round=r + 1)
-
-        return circ
-
-
-    """
-    #Log depth. circuit
-    """
-    n_total = int(np.ceil(np.log2(U.shape[0])))
-    depth = 2#int(np.ceil(np.log2(n_total)))
-    U = qtn.Tensor(data = unitary_extension(U).reshape(* [2] * (2 * n_total)), inds=[f'k{i}' for i in range(n_total)] + [f'b{i}' for i in range(n_total)], tags={'U_TARGET'})
-
-
-    """
-    #Round to nearest power of 2. (means identity gives original result otherwise bitflips)
-    """
-    if depth % 2 != 0:
-        depth += 1
-
-    circ = ansatz_circuit_U3(n_total, depth)
-
-    V = circ.get_uni(transposed=True)
-
-    #V.draw(color=[f'ROUND_{i}' for i in range(n_total + 1)], show_inds=True, show_tags = False)
-    #V.draw(color=['U3', 'CX'], show_inds=True)
-
-    def loss(V, U):
-        return 1 - abs((V.H & U).contract(all, optimize='auto-hq')) / 2**n_total
-
-    """
-    print(f'Loss before: {loss(V, U)}')
-    tnopt = qtn.TNOptimizer(
-    V,                        # the tensor network we want to optimize
-    loss,                     # the function we want to minimize
-    loss_constants={'U': U},  # supply U to the loss function as a constant TN
-    tags=['U3'],              # only optimize su4 tensors
-    autodiff_backend='autograd',   # use 'autograd' for non-compiled optimization
-    optimizer='L-BFGS-B',     # the optimization algorithm
-    )
-
-    V_opt = tnopt.optimize_basinhopping(n=500, nhop=10)
-    circ.update_params_from(V_opt)
-    """
-    return circ
-
-def deterministic_quantum_stacking(y_train, bitstrings, n_copies, classifier, v_col = False):
-
-    #Shape: n_train,2**label_qubits
-    initial_label_qubits = np.load('results/stacking/initial_label_qubit_states_4.npy')
-
-    #Shape: n_train, n_classes
-    # No Need to project onto bitstring states, as evaluate picks highest
-    # Which corresponds to bitstring state anyway
-    variational_label_qubits = np.load('results/stacking/final_label_qubit_states_4.npy')
-
-    #print('Accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
-    #print('Accuracy After:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_train, 1))
-
-    dim_l = initial_label_qubits.shape[1]
-    outer_ket_states = initial_label_qubits
-
-    #copy_qubits = np.ones(dim_l) / np.sqrt(dim_l)
-    #copy_qubits = np.eye(dim_l)[0]
-
-    #n_copies = 2
-    dim_lc = dim_l ** (1 + n_copies)
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    """
-    #.shape = n_train, dim_l**n_copies+1, dim_l**n_copies+1
-    outer_states = np.array([np.outer(i.conj().T, i) for i in outer_ket_states])
-    print('Outer label qubits shape:', outer_states.shape)
-
-    #.shape = n_classes, dim_l**n_copies+1
-    weighted_summed_states = np.zeros((len(set(y_train)), dim_lc, dim_lc), dtype = np.complex128)
-    for i in tqdm(range(len(outer_states))):
-        weighted_outer_states = []
-        for fl in variational_label_qubits[i]:
-            weighted_outer_states.append(outer_states[i] * fl)
-        weighted_summed_states += weighted_outer_states
-    #weighted_summed_states_inefficent = np.sum([[ outer_states[i] * fl for fl in variational_label_qubits[i]] for i in range(len(outer_states))], axis = 0)
-    """
-
-    weighted_summed_states = np.zeros((len(set(y_train)), dim_lc, dim_lc))#, dtype = np.complex128)
-    #Loop over all predictions
-    #for i in tqdm(range(len(variational_label_qubits))):
-    for i in range(len(variational_label_qubits)):
-        weighted_outer_states = []
-
-        #stack (append) different labels
-        for fl in variational_label_qubits[i]:
-            #weighted_proto_sum_states = np.zeros((dim_lc, dim_lc), dtype = np.complex128)
-            ket = initial_label_qubits[i]
-
-            #Construct label qubit + copies state
-            for k in range(n_copies):
-                ket = np.kron(ket, initial_label_qubits[i])
-            #    ket = np.kron(ket, copy_qubits)
-
-            #Outer product total state to convert into matrixs
-            outer = np.outer(ket, ket)
-
-            #Weight each element via output of NN
-            weighted_outer_states.append(fl * outer)
-
-        #Sum over all image predictions
-        weighted_summed_states += weighted_outer_states
-
-
-    #U and S.shape = dim_l**n_copies+1, dim_l**n_copies+1
-    #print('Performing SVDs!')
-    #USs = [svd(i)[:2] for i in tqdm(weighted_summed_states)]
-    USs = [svd(i)[:2] for i in weighted_summed_states]
-
-    if v_col:
-        D = dim_l
-        V = np.array([i[0][:, :D] @ np.sqrt(np.diag(i[1])[:D, :D]) for i in USs]).squeeze()
-        a, b, c = V.shape
-        V = np.pad(V, ((0,D-a), (0,0), (0,0))).transpose(0,2,1).reshape(D*c,b)
-
-    #V.shape = dim_l**n_copies+1 , dim_l
-    else:
-        V = np.array([i[0][:, :1] @ np.sqrt(np.diag(i[1])[:1, :1]) for i in USs]).squeeze()#.conj().T
-
-
-    #print('Performing Polar Decomposition!')
-    U = polar(V)[0]
-
-    #print('Performing Contractions!')
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    if v_col:
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
-
-    #print(preds_U[0,:30].shape)
-    #print(preds_U[0,:30])
-    #assert()
-
-    print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    print('Accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_train, 1))
-    return U
-
-def deterministic_quantum_stacking_with_sum_states(y_train, bitstrings, sum_states, classifier):
-
-    #Shape: n_train,2**label_qubits
-    #initial_label_qubits = np.load('initial_label_qubit_states_3.npy')
-    #Prototypical sum states
-    initial_label_qubits = np.array([(classifier @ s).squeeze().data.reshape(-1) for s in sum_states])
-
-    #Shape: n_train, n_classes
-    # No Need to project onto bitstring states, as evaluate picks highest
-    # Which corresponds to bitstring state anyway
-    variational_label_qubits = np.load('results/stacking/final_label_qubit_states_3.npy')
-
-    print('Accuracy before:', evaluate_classifier_top_k_accuracy(np.load('results/stacking/initial_label_qubit_states_3.npy'), y_train, 1))
-    print('Accuracy After:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_train, 1))
-
-    dim_l = initial_label_qubits.shape[1]
-    outer_ket_states = initial_label_qubits
-
-    #copy_qubits = np.ones(dim_l) / np.sqrt(dim_l)
-    #copy_qubits = np.eye(dim_l)[0]
-
-    #.shape = n_train, dim_l**n_copies+1
-
-    weighted_summed_states = np.zeros((len(set(y_train)), dim_l, dim_l), dtype = np.complex128)
-    #Loop over all predictions
-    for i in tqdm(range(len(variational_label_qubits))):
-        weighted_outer_states = []
-
-        #stack (append) different labels
-        for fl in variational_label_qubits[i]:
-            weighted_proto_sum_states = np.zeros((dim_lc, dim_lc), dtype = np.complex128)
-            #Sum over proto sum states
-            for s in initial_label_qubits:
-                ket = s
-
-            #Outer product total state to convert into matrixs
-                outer = np.outer(ket, ket)
-                weighted_proto_sum_states += (fl * outer)
-
-            #Weight each element via output of NN
-            weighted_outer_states.append(weighted_proto_sum_states)
-
-
-        #Sum over all image predictions
-        weighted_summed_states += weighted_outer_states
-
-
-    #U and S.shape = dim_l, dim_l
-    print('Performing SVDs!')
-    USs = [svd(i)[:2] for i in tqdm(weighted_summed_states)]
-
-    #V.shape = dim_l , dim_l
-    V = np.array([i[0][:, :1] @ np.sqrt(np.diag(i[1])[:1, :1]) for i in USs]).squeeze().conj().T#, axis = 0)
-
-    print('Performing Polar Decomposition!')
-    U = polar(V)[0]
-
-    print('Performing Contractions!')
-    #Copy qubits as initial states
-    outer_ket_states = np.array([np.kron(i, j) for i,j in zip(np.load('results/stacking/initial_label_qubit_states_3.npy'), np.load('results/stacking/initial_label_qubit_states_3.npy'))])
-
-    preds_U = np.array([abs(i @ U) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    preds_V = np.array([abs(i @ V) for i in outer_ket_states])
-    preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    print('Accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_train, 1))
-
-def deterministic_quantum_stacking_with_ortho_normal_states(y_train, bitstrings, n_copies, classifier, v_col = False):
-
-    #Shape: n_train,2**label_qubits
-    initial_label_qubits = np.load('results/stacking/initial_label_qubit_states_3.npy')
-
-    #Shape: n_train, n_classes
-    # No Need to project onto bitstring states, as evaluate picks highest
-    # Which corresponds to bitstring state anyway
-    variational_label_qubits = np.load('results/stacking/final_label_qubit_states_3.npy')
-
-    print('Accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
-    print('Accuracy After:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_train, 1))
-
-    dim_l = initial_label_qubits.shape[1]
-    outer_ket_states = initial_label_qubits
-
-    #copy_qubits = np.ones(dim_l) / np.sqrt(dim_l)
-    #copy_qubits = np.eye(dim_l)[0]
-
-    #n_copies = 2
-    dim_lc = dim_l ** (1 + n_copies)
-
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    """
-    #.shape = n_train, dim_l**n_copies+1, dim_l**n_copies+1
-    outer_states = np.array([np.outer(i.conj().T, i) for i in outer_ket_states])
-    print('Outer label qubits shape:', outer_states.shape)
-
-    #.shape = n_classes, dim_l**n_copies+1
-    weighted_summed_states = np.zeros((len(set(y_train)), dim_lc, dim_lc), dtype = np.complex128)
-    for i in tqdm(range(len(outer_states))):
-        weighted_outer_states = []
-        for fl in variational_label_qubits[i]:
-            weighted_outer_states.append(outer_states[i] * fl)
-        weighted_summed_states += weighted_outer_states
-    #weighted_summed_states_inefficent = np.sum([[ outer_states[i] * fl for fl in variational_label_qubits[i]] for i in range(len(outer_states))], axis = 0)
-    """
-
-    weighted_summed_states = np.zeros((len(set(y_train)), dim_lc, dim_lc), dtype = np.complex128)
-    from scipy.stats import unitary_group
-    ons = unitary_group.rvs(dim_lc)
-    #Loop over all predictions
-    for i in tqdm(range(len(variational_label_qubits))):
-        weighted_outer_states = []
-
-        #stack (append) different labels
-        for fl in variational_label_qubits[i]:
-
-            weighted_ortho_norm_states = np.zeros((dim_lc, dim_lc), dtype = np.complex128)
-            for o in ons:
-                #Outer product total state to convert into matrixs
-                outer = np.outer(o, o)
-                weighted_ortho_norm_states += (fl * outer)
-
-            #Weight each element via output of NN
-            weighted_outer_states.append(fl * outer)
-
-        #Sum over all image predictions
-        weighted_summed_states += weighted_outer_states
-
-    from xmps.svd_robust import svd
-    from scipy.linalg import polar
-    #U and S.shape = dim_l**n_copies+1, dim_l**n_copies+1
-    print('Performing SVDs!')
-    USs = [svd(i)[:2] for i in tqdm(weighted_summed_states)]
-
-    if v_col:
-        D = dim_l
-        V = np.array([i[0][:, :D] @ np.sqrt(np.diag(i[1])[:D, :D]) for i in USs]).squeeze()
-        a, b, c = V.shape
-        V = np.pad(V, ((0,D-a), (0,0), (0,0))).transpose(0,2,1).reshape(D*c,b)
-
-    #V.shape = dim_l**n_copies+1 , dim_l
-    else:
-        V = np.array([i[0][:, :1] @ np.sqrt(np.diag(i[1])[:1, :1]) for i in USs]).squeeze()#.conj().T
-
-
-    print('Performing Polar Decomposition!')
-    U = polar(V)[0]
-
-    print('Performing Contractions!')
-
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    if v_col:
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
-
-    #print(preds_U[0,:30].shape)
-    #print(preds_U[0,:30])
-    #assert()
-
-    print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    print('Accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_train, 1))
-    """
-    for i in range(10):
-        plt.bar(range(10), preds_U[i], color = 'tab:blue', label = 'ortho')
-        plt.bar(range(10), preds_V[i], fill = False, edgecolor = 'tab:orange', linewidth = 1.5, label = 'non_ortho')
-        plt.legend()
-        plt.show()
-    """
+    accuracy = evaluate_classifier_top_k_accuracy(trained_test_predictions, y_test, 1)
+    print(accuracy)
 
 def partial_trace(rho, qubit_2_keep):
     """ Calculate the partial trace for qubit system
@@ -882,410 +98,132 @@ def partial_trace(rho, qubit_2_keep):
         Density matrix after taking partial trace
     """
     num_qubit = int(np.log2(rho.shape[0]))
-    qubit_axis = [(i, num_qubit + i) for i in range(num_qubit)
-                  if i not in qubit_2_keep]
-    minus_factor = [(i, 2 * i) for i in range(len(qubit_axis))]
-    minus_qubit_axis = [(q[0] - m[0], q[1] - m[1])
-                        for q, m in zip(qubit_axis, minus_factor)]
-    rho_res = np.reshape(rho, [2, 2] * num_qubit)
-    qubit_left = num_qubit - len(qubit_axis)
-    for i, j in minus_qubit_axis:
-        rho_res = np.trace(rho_res, axis1=i, axis2=j)
-    if qubit_left > 1:
-        rho_res = np.reshape(rho_res, [2 ** qubit_left] * 2)
-
-    return rho_res
-
-def pennylane_example():
-    import numpy as np
-    import tensorflow as tf
-
-    import pennylane as qml
-    from pennylane import numpy as p_np
-
-    from pennylane.templates.state_preparations import MottonenStatePreparation
-    from pennylane.templates.layers import StronglyEntanglingLayers
-
-
-    # Get the MNIST Data
-    mnist = tf.keras.datasets.fashion_mnist
-
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
-    x_train, x_test = x_train / 255.0, x_test / 255.0
-
-    """
-    Settings
-    """
-    n_qubits = 6                  # Number of qubits
-    num_layers = 8                # Number of layers
-
-    is_data_reduced = True        # Data is reduced to n classes
-    reduced_classes = [1,2,3,7]   # Selected (and sorted) classes
-
-    # Number of reduced classes
-    reduced_num_classes = len(reduced_classes)
-
-    """
-    Filtering Data
-    """
-    # All indexes
-    train_index_f = (y_train == -1)
-    tests_index_f = (y_test  == -1)
-
-    if is_data_reduced:
-      # Filter indexes
-      for n_class in reduced_classes:
-        train_index_f   |= (y_train == n_class)
-        tests_index_f   |= (y_test == n_class)
-
-      num_classes_q = reduced_num_classes
-
-    # New databases
-    X_ends_pre = x_train[train_index_f]
-    Y_ends_pre = y_train[train_index_f]
-
-    X_tests_pre = x_test[tests_index_f]
-    Y_tests_pre = y_test[tests_index_f]
-
-
-    if is_data_reduced:
-      # Change categories to their new range.
-      # E.g. {0,...,9} -> {0,...,4}
-      for i, k in enumerate(reduced_classes):
-        Y_ends_pre[Y_ends_pre == k] = i
-        Y_tests_pre[Y_tests_pre == k] = i
-
-    latent_dim = 2 ** n_qubits    # Selected latent dimensions
-
-    """
-    Pre-process data.
-    I.e. Reduce dimensionality
-    """
-    class Autoencoder(tf.keras.models.Model):
-      def __init__(self, latent_dim):
-        super(Autoencoder, self).__init__()
-        self.latent_dim = latent_dim
-        self.encoder = tf.keras.Sequential([
-          tf.keras.layers.Flatten(name = "faltten_1"),
-          tf.keras.layers.Dense(196, activation='relu', name = "dense_1"),
-          tf.keras.layers.Dense(64, activation='relu', name = "dense_2"),
-          tf.keras.layers.Dense(latent_dim, activation='sigmoid', name = "dense_3"),
-        ])
-        self.decoder = tf.keras.Sequential([
-          tf.keras.layers.Dense(64, activation='relu', name = "dense_4"),
-          tf.keras.layers.Dense(196, activation='relu', name = "dense_5"),
-          tf.keras.layers.Dense(784, activation='relu', name = "dense_6"),
-          tf.keras.layers.Reshape((28, 28), name = "reshape_1")
-        ])
-
-      def call(self, x):
-        encoded = self.encoder(x)
-        decoded = self.decoder(encoded)
-        return decoded
-
-    # Prepare and compile the model
-    autoencoder = Autoencoder(latent_dim)
-    autoencoder.compile(optimizer='adam', loss='mae', metrics=["accuracy"])
-
-    # Train the model with the filtered data
-    autoencoder.fit(X_ends_pre, X_ends_pre, epochs=1, shuffle=True, validation_data=(X_tests_pre, X_tests_pre))
-
-    """
-    Encode data
-    """
-    # Encode data with our new autoencoder
-    QX_train = autoencoder.encoder(X_ends_pre).numpy()
-    QX_test = autoencoder.encoder(X_tests_pre).numpy()
-
-    # Change Y values to categorical
-    QY_train = tf.keras.utils.to_categorical(Y_ends_pre, num_classes_q)
-    QY_test = tf.keras.utils.to_categorical(Y_tests_pre, num_classes_q)
-
-    """
-    Define VQC
-    """
-
-    dev = qml.device("default.qubit", wires = n_qubits)
-
-    @qml.qnode(dev, diff_method='adjoint')
-    def circuit(weights, inputs=None):
-      ''' Quantum QVC Circuit'''
-
-      # Splits need to be done through the tensorflow interface
-      weights_each_layer = weights#tf.split(weights, num_or_size_splits=num_layers, axis=0)
-
-      # Input normalization
-      inputs_1 = inputs / p_np.sqrt(max(p_np.sum(inputs ** 2, axis=-1), 0.001))
-
-      for i, W in enumerate(weights):
-        # Data re-uploading technique
-        if i % 2 == 0:
-          MottonenStatePreparation(inputs_1, wires = range(n_qubits))
-
-        # Neural network layer
-        StronglyEntanglingLayers(weights_each_layer[i], wires=range(n_qubits))
-
-      # Measurement return
-      return [qml.expval(qml.PauliZ(i)) for i in range(n_qubits)]
-
-    weight_shapes = {"weights": (num_layers,n_qubits,3)}
-
-    # Model
-    input_m = tf.keras.layers.Input(shape=(2 ** n_qubits,), name = "input_0")
-    keras_1 = qml.qnn.KerasLayer(circuit, weight_shapes, output_dim=n_qubits, name = "keras_1")(input_m)
-    output = tf.keras.layers.Dense(num_classes_q, activation='softmax', name = "dense_1")(keras_1)
-
-    # Model creation
-    model = tf.keras.Model(inputs=input_m, outputs=output, name="mnist_quantum_model")
-
-    # Model compilation
-    model.compile(
-      loss='categorical_crossentropy',
-      optimizer=tf.keras.optimizers.Adam(learning_rate=0.01) ,
-      metrics=[tf.keras.metrics.CategoricalAccuracy()]
-    )
-
-    # Train the model
-    model.fit(QX_train, QY_train, epochs=1, batch_size=8, shuffle=True)
-
-    results = model.evaluate(QX_test, QY_test, batch_size=16)
-
-def quantum_stacking_with_pennylane(n_copies, U_preds):#circ = None):
-    """
-    Get Data
-    """
-    #initial_label_qubits = np.load('results/stacking/initial_label_qubit_states_4.npy')
-    #initial_label_qubits = U_preds #np.array([np.pad(i, (0, 6)) for i in np.load('results/stacking/final_label_qubit_states_4.npy')])
-    initial_label_qubits = np.array([np.pad(i, (0, 6)) for i in np.load('results/stacking/final_label_qubit_states_4.npy')])
-
-    training_predictions = initial_label_qubits
-    n_label_qubits = int(np.log2(training_predictions.shape[1]))
-    for k in range(n_copies):
-        training_predictions = np.array([np.kron(i, j) for i,j in zip(training_predictions, initial_label_qubits)])
-
-    labels = np.load('training_labels.npy')
-
-    r_train = np.arange(len(training_predictions))
-    np.random.shuffle(r_train)
-    training_predictions = training_predictions[r_train]
-    labels = labels[r_train]
-
-    """
-    Settings
-    """
-    n_qubits = int(np.log2(training_predictions.shape[1])) # Number of qubits
-    num_layers = 14 # Number of layers
-
-    #One Hot encode labels
-    #And pad to make shape 16
-    labels = np.array([np.pad(i ,(0,6)) for i in tf.keras.utils.to_categorical(labels, len(set(labels)))])
-
-    """
-    Define VQC
-    """
-
-
-    #dev = qml.device("lightning.qubit", wires = n_qubits)
-    #@qml.qnode(dev, diff_method='adjoint')
-    dev = qml.device("default.qubit.tf", wires = n_qubits)
-
-    circ = None
-    if circ is not None:
-        #raise Exception('Not implemented yet.')
-        circ_data = [i + tuple(j.tags) for i, j in zip(circ.gates, circ.get_uni(transposed=True).tensors)]
-
-        @qml.qnode(dev)
-        def circuit(weights, inputs = None):
-
-            # Input normalization
-            inputs_1 = inputs / p_np.sqrt(p_np.sum(inputs ** 2, axis=-1))
-
-            i = 0
-            for gate in circ_data:
-                if f'ROUND_{i+1}' in gate:
-                    MottonenStatePreparation(inputs_1, wires = range(n_qubits))
-                    i += 1
-                gate_name = gate[0]
-
-                if gate_name == 'U3':
-                    a, b, c = gate[1:4]
-                    qubit = gate[4]
-                    qml.U3(tf.Variable(a, trainable = True),tf.Variable(b, trainable = True),tf.Variable(c, trainable = True), wires = qubit)
-
-                if gate_name == 'CX':
-                    qubits = gate[1:3]
-                    qml.CNOT(wires = qubits)
-
-            return qml.probs(wires=list(range(n_label_qubits)))
-
+    if num_qubit == 4:
+        return np.outer(rho,rho.conj())
     else:
-        @qml.qnode(dev)
-        def circuit(weights, inputs=None):
-          ''' Quantum QVC Circuit'''
+        rho = qutip.Qobj(rho, dims = [[2] * num_qubit ,[1]])
+        return rho.ptrace(qubit_2_keep)
 
-          # Splits need to be done through the tensorflow interface
-          weights_each_layer = tf.split(weights, num_or_size_splits=num_layers, axis=0)
+def evaluate_stacking_unitary(U, partial = False, dataset = 'fashion_mnist', training = False):
+    """
+    Evaluate Performance
+    """
+    n_copies = int(np.log2(U.shape[0])//4)-1
 
-          # Input normalization
-          inputs_1 = inputs / p_np.sqrt(p_np.sum(inputs ** 2, axis=-1))
+    if training:
+        """
+        Load Training Data
+        """
 
-          for i, W in enumerate(weights):
-            # Data re-uploading technique
-            if i % 2 == 0:
-              MottonenStatePreparation(inputs_1, wires = range(n_qubits))
+        initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+        y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
 
-            # Neural network layer
-            StronglyEntanglingLayers(weights_each_layer[i], wires=range(n_qubits))
-
-          # Return full state of label qubits (trace over everything else)
-          return qml.probs(wires=list(range(n_label_qubits)))
-
-    weight_shapes = {"weights": (num_layers,n_qubits,3)}
-
-    #drawer = qml.draw(circuit)
-    #print(drawer(, ))
-    #print(qml.draw(circuit()))
-    #rho = circuit(np.random.randn(num_layers,n_qubits,3), training_predictions[0])
-
-    # Model
-    input_m = tf.keras.layers.Input(shape=(2**n_qubits,), name = "input")
-    output = qml.qnn.KerasLayer(circuit, weight_shapes, output_dim= 2**n_label_qubits, name = "V")(input_m)
-
-    # Model creation
-    model = tf.keras.Model(inputs=input_m, outputs=output, name="Quantum_Stacking")
-    # Model compilation
-    model.compile(
-      loss=tf.keras.losses.CategoricalCrossentropy(from_logits=False),
-      optimizer=tf.keras.optimizers.Adam(learning_rate=0.01) ,
-      metrics=[tf.keras.metrics.CategoricalAccuracy()]
-    )
-
-    model(training_predictions[:1])
-    model.summary()
-    # Train the model
-    history = model.fit(training_predictions, labels, epochs=50, batch_size=8, shuffle=True)
-
-    loss = history.history['loss']
-    acc = history.history['categorical_accuracy']
-    np.save('loss_trained_on_det_U_2_copies_v_col_true', loss)
-    np.save('accuracy_trained_on_det_U_2_copies_v_col_true', acc)
-    results = model.evaluate(training_predictions, labels, batch_size=32)
-
-#def efficent_deterministic_quantum_stacking(y_train, bitstrings, n_copies, classifier, v_col = False):
-def efficent_deterministic_quantum_stacking(n_copies, v_col = False):
-    from numpy import linalg as LA
-    #Shape: n_train,2**label_qubits
-    #initial_label_qubits = np.array(np.load('results/stacking/initial_label_qubit_states_4.npy'), dtype = np.float64)
-    initial_label_qubits = np.load('models/initial_training_predictions_ortho_mpo_classifier.npy')
-
-    #Shape: n_train, n_classes
-    # No Need to project onto bitstring states, as evaluate picks highest
-    # Which corresponds to bitstring state anyway
-    #variational_label_qubits = np.array(np.load('results/stacking/final_label_qubit_states_4.npy'), dtype = np.float64)
-    variational_label_qubits = np.load('models/trained_training_predictions_ortho_mpo_classifier.npy')
-
-    y_train = np.load('models/big_dataset_train_labels.npy')
-    #y_train = np.load('training_labels.npy')
-
-    dim_l = initial_label_qubits.shape[1]
-    outer_ket_states = initial_label_qubits
-
-    #copy_qubits = np.ones(dim_l) / np.sqrt(dim_l)
-    #copy_qubits = np.eye(dim_l)[0]
-
-    #n_copies = 2
-    dim_lc = dim_l ** (1 + n_copies)
-
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    V = []
-    for l, L in enumerate(tqdm(variational_label_qubits.T)):
-        weighted_outer_states = np.zeros((dim_lc, dim_lc))
-        for i, fl  in enumerate(tqdm(L)):
-            ket = initial_label_qubits[i]
-
-            for k in range(n_copies):
-                ket = np.kron(ket, initial_label_qubits[i])
-
-            outer = np.outer(fl * ket, ket)
-            #outer = np.outer(int(l == y_train[i]) * ket, ket)
-            weighted_outer_states += outer
-
-        #print('Performing SVD!')
-        U, S = svd(weighted_outer_states)[:2]
-
-        if v_col:
-            Vl = np.array(U[:, :dim_l] @ np.sqrt(np.diag(S)[:dim_l, :dim_l]))
+        """
+        Rearrange test data to match new bitstring assignment
+        """
+        if partial:
+            possible_labels = [5,7,8,9,4,0,6,1,2,3]
+            assignment = possible_labels + list(range(10,16))
+            reassigned_preds = np.array([i[assignment] for i in initial_label_qubits])
+            reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in reassigned_preds])
         else:
-            Vl = np.array(U[:, :1] @ np.sqrt(np.diag(S)[:1, :1])).squeeze()
-        V.append(Vl)
+            reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
 
-    V = np.array(V)
-    if v_col:
-        a, b, c = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0), (0,0))).transpose(0, 2, 1).reshape(dim_l*c, b)
-        #V = np.pad(V, ((0,dim_l - a), (0,0), (0,0))).transpose(0, 1, 2).reshape(dim_l * b, c)
-    else:
-        a, b = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0)))
+        outer_ket_states = reassigned_preds
+        #.shape = n_train, dim_l**n_copies+1
+        for k in range(n_copies):
+            outer_ket_states = [np.kron(i, j) for i,j in zip(outer_ket_states, reassigned_preds)]
 
-    print('Performing Polar Decomposition!')
-    U = polar(V)[0]
-    print('Performing Contractions!')
+        """
+        Perform Overlaps
+        """
+        #We want qubit formation:
+        #|l_0^0>|l_1^0>|l_0^1>|l_1^1> |l_2^0>|l_3^0>|l_2^1>|l_3^1>...
+        #I.e. act only on first 2 qubits on all copies.
+        #Since unitary is contructed on first 2 qubits of each copy.
+        #So we want U @ SWAP @ |copy_preds>
+        print('Performing Overlaps!')
+        preds_U = np.array([abs(U.dot(i)) for i in tqdm(outer_ket_states)])
 
+        """
+        Trace out other qubits/copies
+        """
 
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    #preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    #preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    if v_col:
         print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        #preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
+        preds_U = np.array([np.diag(partial_trace(i, [0,1,2,3])) for i in tqdm(preds_U)])
 
-    #print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    print()
-    print('Training accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
-    print('Training accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_train, 1))
-    print('Training accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_train, 1))
+        #Rearrange to 0,1,2,3,.. formation. This is req. for evaluate_classifier
+        if partial:
+            preds_U = np.array([i[assignment] for i in preds_U])
+        training_predictions = evaluate_classifier_top_k_accuracy(preds_U, y_train, 1)
+        print()
+        print('Training accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
+        print('Training accuracy U:', training_predictions)
+        print()
 
-    initial_label_qubits = np.load('models/initial_test_predictions_ortho_mpo_classifier.npy')
-    variational_label_qubits = np.load('models/trained_test_predictions_ortho_mpo_classifier.npy')
-    outer_ket_states = initial_label_qubits
+    """
+    Load Test Data
+    """
+    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions.npy')[15]#.astype(np.float32)
+    y_test = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions_labels.npy')#.astype(np.float32)
+
+    """
+    Rearrange test data to match new bitstring assignment
+    """
+    if partial:
+        possible_labels = [5,7,8,9,4,0,6,1,2,3]
+        assignment = possible_labels + list(range(10,16))
+        reassigned_preds = np.array([i[assignment] for i in initial_label_qubits])
+        reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in reassigned_preds])
+    else:
+        reassigned_preds = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+
+    outer_ket_states = reassigned_preds
     #.shape = n_train, dim_l**n_copies+1
     for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
+        outer_ket_states = [np.kron(i, j) for i,j in zip(outer_ket_states, reassigned_preds)]
 
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
+    """
+    Perform Overlaps
+    """
+    #We want qubit formation:
+    #|l_0^0>|l_1^0>|l_0^1>|l_1^1> |l_2^0>|l_3^0>|l_2^1>|l_3^1>...
+    #I.e. act only on first 2 qubits on all copies.
+    #Since unitary is contructed on first 2 qubits of each copy.
+    #So we want U @ SWAP @ |copy_preds>
+    print('Performing Overlaps!')
+    preds_U = np.array([abs(U.dot(i)) for i in tqdm(outer_ket_states)])
 
-    if v_col:
-        print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
+    """
+    Trace out other qubits/copies
+    """
+    print('Performing Partial Trace!')
+    preds_U = np.array([np.diag(partial_trace(i, [0,1,2,3])) for i in tqdm(preds_U)])
 
-    y_test = np.load('models/big_dataset_test_labels.npy')
+    #Rearrange to 0,1,2,3,.. formation. This is req. for evaluate_classifier
+    if partial:
+        preds_U = np.array([i[assignment] for i in preds_U])
+
+    test_predictions = evaluate_classifier_top_k_accuracy(preds_U, y_test, 1)
     print()
     print('Test accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_test, 1))
-    print('Test accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_test, 1))
-    print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
+    print('Test accuracy U:', test_predictions)
+    print()
 
-    #return preds_U
+    return None, test_predictions
 
-def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
+def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, dataset = 'fashion_mnist'):
     from numpy import linalg as LA
-    #Shape: n_train,2**label_qubits
-    #initial_label_qubits = np.array(np.load('results/stacking/initial_label_qubit_states_4.npy'), dtype = np.float64)
-    initial_label_qubits = np.load('models/initial_training_predictions_ortho_mpo_classifier.npy')
+    print('Dataset: ', dataset)
 
-    y_train = np.load('models/big_dataset_train_labels.npy')
+    #initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
+    #y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
+    initial_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+
     possible_labels = list(set(y_train))
-
 
     dim_l = initial_label_qubits.shape[1]
     outer_ket_states = initial_label_qubits
@@ -1305,18 +243,22 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
             for k in range(n_copies):
                 ket = np.kron(ket, i)
 
-            outer = np.outer(ket, ket)
+            outer = np.outer(ket.conj(), ket)
             weighted_outer_states += outer
 
         #print('Performing SVD!')
         U, S = svd(weighted_outer_states)[:2]
-
+        #print(U.shape)
+        #print(S.shape)
+        #assert()
         if v_col:
             #a = b = 16**n (using andrew's defn)
             a, b = U.shape
             p = int(np.log10(b)) - 1
             D_trunc = 16
             Vl = np.array(U[:, :b//16] @ np.sqrt(np.diag(S)[:b//16, :b//16]))
+            print(Vl.shape)
+            assert()
             #Vl = np.array(U[:, :10**p] @ np.sqrt(np.diag(S)[:10**p, :10**p]))
             #Vl = np.array(U[:, :D_trunc] @ np.sqrt(np.diag(S)[:D_trunc, :D_trunc]))
         else:
@@ -1336,309 +278,76 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
     #np.save('V', V)
     print('Performing Polar Decomposition!')
     U = polar(V)[0]
-    print('Performing Contractions!')
-    #np.save('U', U)
+    print('Finished Computing Stacking Unitary!')
+    return U.astype(np.float32)
 
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    #preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    #preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    if v_col:
-        print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        #preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
-
-    #print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    variational_label_qubits = np.load('models/trained_training_predictions_ortho_mpo_classifier.npy')
-    print()
-    print('Training accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
-    print('Training accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_train, 1))
-    print('Training accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_train, 1))
-    """
-    initial_label_qubits = np.load('models/initial_test_predictions_ortho_mpo_classifier.npy')
-    variational_label_qubits = np.load('models/trained_test_predictions_ortho_mpo_classifier.npy')
-    outer_ket_states = initial_label_qubits
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    #preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    #preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-    if v_col:
-        print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        #preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
-
-    y_test = np.load('models/big_dataset_test_labels.npy')
-    print()
-    print('Test accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_test, 1))
-    print('Test accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_test, 1))
-    print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
-    print()
-    """
-def paralell_deterministic_quantum_stacking(n_copies, v_col = False):
-    """
-    Code in order to get 3 copies datapoint on rosalind machine.
-    First simulation: Generate U & S.
-    Second Simulation: Generate V, perform polar decomp.
-    """
-
-
-
-    from mpi4py import MPI
-
-    comm = MPI.COMM_WORLD
-    size = comm.Get_size() #Number of Cores
-    rank = comm.Get_rank() #Core number
-
-    numDataPerRank = 1
-
-    sendbuf = np.zeros(numDataPerRank, dtype = np.float32)
-    recvbuf = None
-    if rank == 0:
-        recvbuf = np.empty([size,numDataPerRank], dtype = np.float32)
-
-    print('Rank: ',rank,'online!')
-
-
-
-    #Shape: n_train,2**label_qubits
-    #initial_label_qubits = np.array(np.load('results/stacking/initial_label_qubit_states_4.npy'), dtype = np.float64)
-    initial_label_qubits = np.load('models/initial_training_predictions_ortho_mpo_classifier.npy')
-
-    #Shape: n_train, n_classes
-    # No Need to project onto bitstring states, as evaluate picks highest
-    # Which corresponds to bitstring state anyway
-    #variational_label_qubits = np.array(np.load('results/stacking/final_label_qubit_states_4.npy'), dtype = np.float64)
-    variational_label_qubits = np.load('models/trained_training_predictions_ortho_mpo_classifier.npy')
-
-    y_train = np.load('models/big_dataset_train_labels.npy')
-    #y_train = np.load('training_labels.npy')
-
-
-    dim_l = initial_label_qubits.shape[1]
-    outer_ket_states = initial_label_qubits
-
-    #copy_qubits = np.ones(dim_l) / np.sqrt(dim_l)
-    #copy_qubits = np.eye(dim_l)[0]
-
-    #n_copies = 2
-    dim_lc = dim_l ** (1 + n_copies)
-
-
-    #.shape = n_train, dim_l**n_copies+1
-    #for k in range(n_copies):
-    #    outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    V = []
-    #Each core does 1 label
-    for L in variational_label_qubits.T[rank:rank+1]:
-        weighted_outer_states = np.zeros((dim_lc, dim_lc))
-        for i, fl  in enumerate(tqdm(L)):
-            ket = initial_label_qubits[i]
-
-            for k in range(n_copies):
-                ket = np.kron(ket, initial_label_qubits[i])
-
-            outer = np.outer(fl * ket, ket)
-            weighted_outer_states += outer
-
-        #print('Performing SVD!')
-        U, S = svd(weighted_outer_states)[:2]
-
-        np.save(f'U_rank_{rank}', U[:, dim_l])
-        np.save(f'S_rank_{rank}', np.diag(S)[:dim_l, :dim_l])
-        print('Rank: ',rank,'finished!')
-    """
-
-        if v_col:
-            Vl = np.array(U[:, :dim_l] @ np.sqrt(np.diag(S)[:dim_l, :dim_l]))
-        else:
-            Vl = np.array(U[:, :1] @ np.sqrt(np.diag(S)[:1, :1])).squeeze()
-
-        V.append(Vl)
-
-    V = np.array(V)
-    if v_col:
-        a, b, c = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0), (0,0))).transpose(0, 2, 1).reshape(dim_l*c, b)
-    else:
-        a, b = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0)))
-
-    print('Performing Polar Decomposition!')
-    U = polar(V)[0]
-    print('Performing Contractions!')
-
-
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    #preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    #preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    if v_col:
-        print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        #preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
-
-    #print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    print()
-    print('Training accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
-    print('Training accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_train, 1))
-    print('Training accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_train, 1))
-
-    initial_label_qubits = np.load('models/initial_test_predictions_ortho_mpo_classifier.npy')
-    variational_label_qubits = np.load('models/trained_test_predictions_ortho_mpo_classifier.npy')
-    outer_ket_states = initial_label_qubits
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    #preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    #preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    if v_col:
-        print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        #preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
-
-    #print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    y_test = np.load('models/big_dataset_test_labels.npy')
-    print()
-    print('Test accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_test, 1))
-    print('Test accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_test, 1))
-    print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
-    """
-
-
-
-def delta_paralell_deterministic_quantum_stacking(n_copies, v_col = False):
-    """
-    Code in order to get 3 copies datapoint on rosalind machine.
-    First simulation: Generate U & S.
-    Second Simulation: Generate V, perform polar decomp.
-    """
-    """
-    from mpi4py import MPI
-
-    comm = MPI.COMM_WORLD
-    size = comm.Get_size() #Number of Cores
-    """
-    #rank = comm.Get_rank() #Core number
-    rank = 0
-    print('Rank: ',rank,'online!')
-
-    #Shape: n_train,2**label_qubits
-    #initial_label_qubits = np.array(np.load('results/stacking/initial_label_qubit_states_4.npy'), dtype = np.float64)
-    initial_label_qubits = np.load('models/initial_training_predictions_ortho_mpo_classifier.npy')
-
-    y_train = np.load('models/big_dataset_train_labels.npy')
-    #y_train = np.load('training_labels.npy')
-    possible_labels = list(set(y_train))
-
-    dim_l = initial_label_qubits.shape[1]
-    outer_ket_states = initial_label_qubits
-
-    dim_lc = dim_l ** (1 + n_copies)
-
-
-    #.shape = n_train, dim_l**n_copies+1
-    #for k in range(n_copies):
-    #    outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    V = []
-    for l in possible_labels[rank:rank+1]:
-        weighted_outer_states = np.zeros((dim_lc, dim_lc), dtype = np.float32)
-        for i in tqdm(initial_label_qubits[y_train == l]):
-            ket = i
-
-            for k in range(n_copies):
-                ket = np.kron(ket, i)
-
-            outer = np.outer(ket, ket)
-            weighted_outer_states += outer
-
-        #print('Performing SVD!')
-        U, S = svd(weighted_outer_states)[:2]
-
-        np.save(f'U_rank_{rank}', U[:, dim_l])
-        print(U.shape)
-        np.save(f'S_rank_{rank}', np.diag(S)[:dim_l, :dim_l])
-        print('Rank: ',rank,'finished!')
-
-    """
-
-        if v_col:
-            Vl = np.array(U[:, :dim_l] @ np.sqrt(np.diag(S)[:dim_l, :dim_l]))
-        else:
-            Vl = np.array(U[:, :1] @ np.sqrt(np.diag(S)[:1, :1])).squeeze()
-
-        V.append(Vl)
-
-    V = np.array(V)
-    if v_col:
-        a, b, c = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0), (0,0))).transpose(0, 2, 1).reshape(dim_l*c, b)
-    else:
-        a, b = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0)))
-
-    print('Performing Polar Decomposition!')
-    U = polar(V)[0]
-
-    initial_label_qubits = np.load('models/initial_test_predictions_ortho_mpo_classifier.npy')
-    variational_label_qubits = np.load('models/trained_test_predictions_ortho_mpo_classifier.npy')
-    outer_ket_states = initial_label_qubits
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    #preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    #preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
-
-    if v_col:
-        print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        #preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
-
-    #print('Accuracy V:', evaluate_classifier_top_k_accuracy(preds_V, y_train, 1))
-    y_test = np.load('models/big_dataset_test_labels.npy')
-    print()
-    print('Test accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_test, 1))
-    print('Test accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_test, 1))
-    print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
-    """
-
-
-
-def fixed_delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False):
+def sum_state_deterministic_quantum_stacking(n_copies, v_col = True, dataset = 'fashion_mnist'):
     from numpy import linalg as LA
-    #Shape: n_train,2**label_qubits
-    #initial_label_qubits = np.array(np.load('results/stacking/initial_label_qubit_states_4.npy'), dtype = np.float64)
-    initial_label_qubits = np.load('models/initial_training_predictions_ortho_mpo_classifier.npy')
+    print('Dataset: ', dataset)
 
-    y_train = np.load('models/big_dataset_train_labels.npy')
+    initial_label_qubits = produce_psuedo_sum_states(dataset)
+    y_train = range(10)
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+
     possible_labels = list(set(y_train))
-
 
     dim_l = initial_label_qubits.shape[1]
     outer_ket_states = initial_label_qubits
 
     dim_lc = dim_l ** (1 + n_copies)
 
+    weighted_outer_states = np.zeros((dim_lc, dim_lc))
+    for l in tqdm(possible_labels):
+        for i in tqdm(initial_label_qubits[y_train == l]):
+            ket = i
+
+            for k in range(n_copies):
+                ket = np.kron(ket, i)
+
+            outer = np.outer(np.kron(bitstrings[l].squeeze().tensors[5].data, np.eye(dim_lc//16)[0]), ket)
+            weighted_outer_states += outer
+    print('Performing Polar Decomposition!')
+    U = polar(weighted_outer_states)[0]
+    print('Finished Computing Stacking Unitary!')
+    return U.astype(np.float32)
+
+def specific_quantum_stacking(n_copies, v_col = False):
+    from numpy import linalg as LA
+
+    """
+    Load Data
+    """
+    initial_label_qubits = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+    y_train = np.load('Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+    initial_label_qubits = [i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits]
+
+    """
+    Rearrange labels such that 5,7,8,9 are on the bitstrings:
+    |00>(|00> + |01> + |10> + |11>)
+    Also post-select (slice) such that stacking unitary is constructed only from bitstrings corresponding to labels 5,7,8,9
+    Normalisation req. after post-selection
+    """
+    possible_labels = [5,7,8,9,4,0,6,1,2,3]
+    assignment = possible_labels + list(range(10,16))
+    reassigned_preds = np.array([i[assignment][:4] for i in initial_label_qubits])
+    initial_label_qubits = reassigned_preds
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+
+    """
+    Construct V: Non-unitary stacking operator
+    """
+    dim_l = initial_label_qubits.shape[1]
+    dim_lc = dim_l ** (1 + n_copies)
+
     #.shape = n_train, dim_l**n_copies+1
+    outer_ket_states = initial_label_qubits
     for k in range(n_copies):
         outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
 
+    print('Computing Stacking Matrix!')
+
     V = []
-    for l in tqdm(possible_labels):
+    for l in tqdm(possible_labels[:4]):
         weighted_outer_states = np.zeros((dim_lc, dim_lc))
         for i in tqdm(initial_label_qubits[y_train == l]):
             ket = i
@@ -1646,61 +355,263 @@ def fixed_delta_efficent_deterministic_quantum_stacking(n_copies, v_col = False)
             for k in range(n_copies):
                 ket = np.kron(ket, i)
 
-            outer = np.outer(ket, ket)
+            outer = np.outer(ket, ket.conj())
             weighted_outer_states += outer
 
         #print('Performing SVD!')
         U, S = svd(weighted_outer_states)[:2]
-        Vl = (U @ np.sqrt(np.diag(S)))[:, l:l+1].squeeze()
+
+        if v_col:
+            a, b = U.shape
+            #Truncated to this amount to ensure V is square for polar decomp.
+            Vl = np.array(U[:, :b//4] @ np.sqrt(np.diag(S)[:b//4, :b//4]))
+        else:
+            Vl = np.array(U[:, :1] @ np.sqrt(np.diag(S)[:1, :1])).squeeze()
+
         V.append(Vl)
 
     V = np.array(V)
-    """
+
     if v_col:
-        a, b, c = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0), (0,0))).transpose(0, 2, 1).reshape((dim_l)*c, b)
-        #V = np.pad(V, ((0,dim_l - a), (0,0), (0,0))).transpose(0, 1, 2).reshape(dim_l * b, c)
-    else:
-        a, b = V.shape
-        V = np.pad(V, ((0,dim_l - a), (0,0)))
-    """
-    a, b = V.shape
-    V = np.pad(V, ((0,dim_l - a), (0,0)))
+        c, d, e = V.shape
+        V = V.transpose(0, 2, 1).reshape(c*e, d)
+
     print('Performing Polar Decomposition!')
     U = polar(V)[0]
-    print('Performing Contractions!')
+    U = U.astype(np.float32)
 
-    initial_label_qubits = np.load('models/initial_test_predictions_ortho_mpo_classifier.npy')
-    variational_label_qubits = np.load('models/trained_test_predictions_ortho_mpo_classifier.npy')
-    outer_ket_states = initial_label_qubits
-    #print(outer_ket_states.shape)
 
-    #.shape = n_train, dim_l**n_copies+1
-    for k in range(n_copies):
-        outer_ket_states = np.array([np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)])
-    #print(outer_ket_states.shape)
+    """
+    Add conditionals and apply unitary to correct qubits via cirq (qiskit is slow af)
+    """
+    """
+    print('Obtaining Circuit Unitary!')
+    import cirq
+    #stacking_qubits = list(np.array([[i,i+1] for i in range(2, (n_copies + 1) * 4, 4)]).flatten())
+    stacking_qubits = [2,3,6,7,10,11]
+    control_qubits = [i for i in range((n_copies + 1) * 4) if i not in stacking_qubits]
 
-    preds_U = np.array([abs(U @ i) for i in outer_ket_states])
-    preds_U = np.array([i / np.sqrt(i @ i) for i in preds_U])
-    preds_V = np.array([abs(V @ i) for i in outer_ket_states])
-    preds_V = np.array([i / np.sqrt(i @ i) for i in preds_V])
+    sq = [cirq.LineQubit(i) for i in stacking_qubits]
+    #sq = [cirq.LineQubit(i) for i in [0,1,4,5,8,9]]
+    cq = [cirq.LineQubit(i) for i in control_qubits]
+    #cq = [cirq.LineQubit(i) for i in [2,3,6,7,10,11]]
 
-    if v_col:
+    U_cirq = cirq.MatrixGate(U).controlled(len(cq))
+    circuit = cirq.Circuit()
+
+    # You can create a circuit by appending to it
+    circuit.append(cirq.X(q) for q in cq)
+    circuit.append(U_cirq(*cq, *sq))
+    circuit.append(cirq.X(q) for q in cq)
+    print(circuit)
+    U_circ = cirq.unitary(circuit)
+    """
+    def swap_gate(a,b,n):
+        M = [np.eye(2, dtype = U.dtype) for _ in range(n)]
+        result = sparse.eye(2**n, dtype = U.dtype) - sparse.eye(2**n, dtype = U.dtype)
+
+        #Same as qiskit convention
+        #a = n-a-1
+        #b = n-b-1
+
+        for i in [[1,0],[0,1]]:
+            for j in [[1,0],[0,1]]:
+                M[a] = np.outer(i,j) #|i><j|
+                M[b] = np.outer(j,i) #|j><i|
+                swap_gate = sparse.csr_matrix(M[0])
+                for m in M[1:]:
+                    swap_gate = sparse.kron(swap_gate, sparse.csr_matrix(m))
+                result += swap_gate
+        return result
+
+    I = np.eye(4**(n_copies + 1), dtype = U.dtype)
+    U_circ = sparse.kron(np.outer(I[0],I[0]), U)
+    for i in tqdm(I[1:]):
+        U_circ += sparse.kron(sparse.csr_matrix(np.outer(i, i)),sparse.csr_matrix(I))
+
+    for i in tqdm(range(1, n_copies+1)):
+        s_sparse = sparse.csr_matrix(swap_gate(2+4*(i-1), 2+4*(i-1) + 2*n_copies - 2*(i-1), 4 * (n_copies + 1)))
+        U_circ = s_sparse @ U_circ @ s_sparse
+
+        s_sparse = sparse.csr_matrix(swap_gate(2+4*(i-1)+1, 2+4*(i-1) + 2*n_copies - 2*(i-1) + 1, 4 * (n_copies + 1)))
+        U_circ = s_sparse @ U_circ @ s_sparse
+
+    return U_circ.astype(np.float32)
+
+def stacking_on_confusion_matrix(max_copies, dataset = 'fashion_mnist'):
+
+    initial_label_qubits = produce_psuedo_sum_states(dataset)
+    permutation = load_brute_force_permutations(10,dataset)[1]
+
+    rearranged_results = []
+    for row in initial_label_qubits[permutation]:
+        rearranged_results.append(row[permutation])
+    rearranged_results = np.array(rearranged_results)
+
+    total_results = []
+    total_results.append(rearranged_results)
+    f, axarr = plt.subplots(1,max_copies + 2)
+    axarr[0].imshow(rearranged_results, cmap = "Greys")
+    axarr[0].set_title('MNIST' + '\n No Stacking')
+    axarr[0].set_xticks(range(10))
+    axarr[0].set_yticks(range(10))
+    axarr[0].set_xticklabels(permutation)
+    axarr[0].set_yticklabels(permutation)
+    color = ['black','black','white','black','black']
+    for i in range(len(rearranged_results)):
+        for k, j in enumerate(range(-2,3)):
+            if i + j > -1 and i + j < 10:
+                axarr[0].text(i,i+j,np.round(rearranged_results[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+
+    initial_label_qubits = np.pad(initial_label_qubits, ((0,0), (0,6)))
+    for n_copies in range(max_copies + 1):
+        U = delta_efficent_deterministic_quantum_stacking(n_copies, True, dataset)
+
+        """
+        Rearrange test data to match new bitstring assignment
+        """
+        outer_ket_states = initial_label_qubits
+        #.shape = n_train, dim_l**n_copies+1
+        for k in range(n_copies):
+            outer_ket_states = [np.kron(i, j) for i,j in zip(outer_ket_states, initial_label_qubits)]
+
+        """
+        Perform Overlaps
+        """
+        #We want qubit formation:
+        #|l_0^0>|l_1^0>|l_0^1>|l_1^1> |l_2^0>|l_3^0>|l_2^1>|l_3^1>...
+        #I.e. act only on first 2 qubits on all copies.
+        #Since unitary is contructed on first 2 qubits of each copy.
+        #So we want U @ SWAP @ |copy_preds>
+        print('Performing Overlaps!')
+        preds_U = np.array([abs(U.dot(i)) for i in tqdm(outer_ket_states)])
+
+        """
+        Trace out other qubits/copies
+        """
+
         print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_U])
-        preds_V = np.array([np.diag(partial_trace(np.outer(i, i.conj()), [0,1,2,3]))[:10] for i in preds_V])
+        preds_U = np.array([np.diag(partial_trace(i, [0,1,2,3])) for i in tqdm(preds_U)])
+        preds_U = np.array([i / np.sqrt(i.conj().T @ i) for i in preds_U])
 
-    y_test = np.load('models/big_dataset_test_labels.npy')
-    print()
-    print('Test accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_test, 1))
-    print('Test accuracy after:', evaluate_classifier_top_k_accuracy(variational_label_qubits, y_test, 1))
-    print('Test accuracy U:', evaluate_classifier_top_k_accuracy(preds_U, y_test, 1))
-    print()
+        rearranged_results = []
+        for row in preds_U[permutation]:
+            rearranged_results.append(row[permutation])
+        rearranged_results = np.array(rearranged_results, dtype = np.float32)
+        total_results.append(rearranged_results.T)
 
+        axarr[n_copies+1].imshow(rearranged_results.T, cmap = "Greys")
+        axarr[n_copies+1].set_title('MNIST' + f'\n Stacking: Copies = {n_copies+1}')
+        axarr[n_copies+1].set_xticks(range(10))
+        axarr[n_copies+1].set_yticks(range(10))
+        axarr[n_copies+1].set_xticklabels(permutation)
+        axarr[n_copies+1].set_yticklabels(permutation)
+        for i in range(len(rearranged_results)):
+            for k, j in enumerate(range(-2,3)):
+                if i + j > -1 and i + j < 10:
+                    axarr[n_copies+1].text(i,i+j,np.round(rearranged_results[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
 
+        #np.save(dataset + '_stacked_confusion_matrix', total_results)
+    #f.tight_layout()
+    #plt.savefig(dataaset + '_stacking_confusion_matrix_results.pdf')
+    plt.show()
+
+def plot_confusion_matrix(dataset = 'fashion_mnist'):
+    total_results = np.load('Classifiers/' + dataset + '_stacked_confusion_matrix(copy).npy')
+    permutation = load_brute_force_permutations(10,dataset)[1]
+
+    if dataset == 'fashion_mnist':
+        dataset = 'FASHION MNIST'
+    else:
+        dataset = 'MNIST'
+    f, axarr = plt.subplots(1,4)
+    axarr[0].imshow(total_results[0], cmap = "Greys")
+    axarr[0].set_title('\n No Stacking')
+    axarr[0].set_xticks(range(10))
+    axarr[0].set_yticks(range(10))
+    axarr[0].set_xticklabels(permutation)
+    axarr[0].set_yticklabels(permutation)
+    color = ['black','black','white','black','black']
+    for i in range(len(total_results[0])):
+        axarr[0].text(i,i,f'{total_results[0][i,i]:.2f}', color = 'white', ha="center", va="center", fontsize = 7, fontweight = 'bold')
+
+    for n_copies in range(2 + 1):
+
+        axarr[n_copies+1].imshow(total_results[n_copies+1], cmap = "Greys")
+        axarr[n_copies+1].set_title(f'Stacking:\n Copies = {n_copies+1}')
+        axarr[n_copies+1].set_xticks(range(10))
+        axarr[n_copies+1].set_yticks(range(10))
+        axarr[n_copies+1].set_xticklabels(permutation)
+        axarr[n_copies+1].set_yticklabels(permutation)
+        for i in range(len(total_results[0])):
+            axarr[n_copies+1].text(i,i,f'{total_results[n_copies+1].T[i,i]:.2f}', color = 'white', ha="center", va="center", fontsize = 7, fontweight = 'bold')
+        #for i in range(len(total_results[n_copies+1])):
+        #    for k, j in enumerate(range(-2,3)):
+        #        if i + j > -1 and i + j < 10:
+        #            axarr[n_copies+1].text(i,i+j,np.round(total_results[n_copies+1].T[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+
+        #np.save(dataset + '_stacked_confusion_matrix', total_results)
+    f.tight_layout()
+    plt.suptitle(dataset, y = 0.9)
+    f.set_size_inches(12.5, 4.5)
+
+    plt.savefig(dataset + '_stacking_confusion_matrix_results.pdf')
+    #plt.savefig('test.pdf')
+    plt.show()
+
+def mps_stacking(dataset, n_copies):
+
+    def generate_copy_state(QTN, n_copies):
+        initial_QTN = QTN
+        for _ in range(n_copies):
+            QTN = QTN | initial_QTN
+        return relabel_QTN(QTN)
+
+    def relabel_QTN(QTN):
+        qtn_data = []
+        previous_ind = rand_uuid()
+        for j, site in enumerate(QTN.tensors):
+            next_ind = rand_uuid()
+            tensor = qtn.Tensor(
+                site.data, inds=(f"k{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+            )
+            previous_ind = next_ind
+            qtn_data.append(tensor)
+        return qtn.TensorNetwork(qtn_data)
+
+    #Upload Data
+    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+
+    trunc_label_qubits = initial_label_qubits[:100]
+    trunc_labels = y_train[:100]
+
+    #Convert predictions to MPS
+    mps_predictions = mps_encoding(trunc_label_qubits, 4)
+
+    #Add n_copies of same prediction state
+    copied_predictions = [generate_copy_state(pred,n_copies) for pred in mps_predictions]
+
+    #Add bitstring onto copied states
 
 
 
 if __name__ == '__main__':
-    print('256 SINGULAR VALUES')
-    delta_efficent_deterministic_quantum_stacking(2, True)
+    #mps_stacking('mnist',1)
+    U = delta_efficent_deterministic_quantum_stacking(1, v_col = True, dataset = 'mnist')
+    #evaluate_stacking_unitary(U, dataset = 'mnist')
+    #assert()
+    #U = test(1, dataset = 'fashion_mnist')
+    #classical_stacking()
+    #assert()
+    #plot_confusion_matrix('mnist')
+    #results = []
+    #for i in range(1,10):
+    #    print('NUMBER OF COPIES: ',i)
+    #    U = specific_quantum_stacking(i, True)
+    #    training_predictions, test_predictions = evaluate_stacking_unitary(U, True)
+    #    results.append([training_predictions, test_predictions])
+    #    #np.save('partial_stacking_results_2', results)
+    #stacking_on_confusion_matrix(0, dataset = 'mnist')
+    #U = delta_efficent_deterministic_quantum_stacking(1, dataset = 'mnist')
+    #U = sum_state_deterministic_quantum_stacking(2, dataset = 'mnist')

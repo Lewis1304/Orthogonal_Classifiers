@@ -14,7 +14,7 @@ from oset import oset
 from scipy.linalg import null_space
 
 from xmps.fMPS import fMPS
-from fMPO_reduced import fMPO
+from fMPO import fMPO
 
 
 """
@@ -22,9 +22,15 @@ Data tools
 """
 
 
-def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False):
-    mnist = tf.keras.datasets.mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False, dataset = 'mnist'):
+    if dataset == 'mnist':
+        ds = tf.keras.datasets.mnist
+    elif dataset == 'fashion_mnist':
+        ds = tf.keras.datasets.fashion_mnist
+    else:
+        assert()
+
+    (x_train, y_train), (x_test, y_test) = ds.load_data()
 
     if shuffle:
         r_train = np.arange(len(x_train))
@@ -140,7 +146,7 @@ def bitstring_to_product_state_data(bitstring_data):
     return fMPS().from_product_state(bitstring_data).data
 
 
-def bitstring_data_to_QTN(data, n_sites, truncated=False):
+def bitstring_data_to_QTN(data, n_sites, truncated=True):
     # Doesn't work for truncated_data
     prod_state_data = bitstring_to_product_state_data(data)
     if truncated:
@@ -226,6 +232,8 @@ def fMPS_to_QTN(fmps):
         previous_ind = next_ind
         qtn_data.append(tensor)
     return qtn.TensorNetwork(qtn_data)
+
+
 
 
 """
