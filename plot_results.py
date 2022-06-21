@@ -1,12 +1,356 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from tools import load_data, load_qtn_classifier, data_to_QTN
+from tools import load_data, load_qtn_classifier, data_to_QTN, arrange_data
 from experiments import create_experiment_bitstrings, adding_centre_batches
 from fMPO import fMPO
+from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy
+
 
 """
 Plot D experiments
 """
+def acc_vs_d_total_paper_figure(dataset):
+
+    """
+    #############################
+    MPO
+    #############################
+    """
+    t = 60000
+    """
+    D_total
+    """
+
+    d_total_non_ortho_training_predictions = np.load('data/batch_adding_results/' + dataset + '/D_total/non_ortho_d_total_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][:,:t,:]
+    d_total_ortho_training_predictions = np.load('data/batch_adding_results/' + dataset + '/D_total/ortho_d_total_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][:,:t,:]
+    d_total_non_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_total/non_ortho_d_total_vs_test_predictions.npy')[:,:t,:]
+    d_total_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_total/ortho_d_total_vs_test_predictions.npy')[:,:t,:]
+
+    n_train_samples = d_total_non_ortho_training_predictions.shape[1]
+    n_test_samples = d_total_non_ortho_test_predictions.shape[1]
+
+    x_train, y_train, x_test, y_test = load_data(
+        n_train_samples,n_test_samples, shuffle=False, equal_numbers=True, dataset = dataset
+    )
+
+    x_train, y_train = arrange_data(x_train, y_train, arrangement='one class')
+
+
+    d_total_non_ortho_training_accuracy = [evaluate_classifier_top_k_accuracy(i, y_train, 1) for i in d_total_non_ortho_training_predictions]
+    d_total_ortho_training_accuracy = [evaluate_classifier_top_k_accuracy(i, y_train, 1) for i in d_total_ortho_training_predictions]
+    d_total_non_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_total_non_ortho_test_predictions]
+    d_total_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_total_ortho_test_predictions]
+
+    """
+    D_final
+    """
+
+    d_final_non_ortho_training_predictions = np.load('data/batch_adding_results/' + dataset + '/D_final/non_ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][int(dataset == 'fashion_mnist'):,:t,:]
+    d_final_ortho_training_predictions = np.load('data/batch_adding_results/' + dataset + '/D_final/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][int(dataset == 'fashion_mnist'):,:t,:]
+    d_final_non_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_final/non_ortho_d_final_vs_test_predictions.npy')[int(dataset == 'fashion_mnist'):,:t,:]
+    d_final_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_final/ortho_d_final_vs_test_predictions.npy')[int(dataset == 'fashion_mnist'):,:t,:]
+
+
+    d_final_non_ortho_training_accuracy = [evaluate_classifier_top_k_accuracy(i, y_train, 1) for i in d_final_non_ortho_training_predictions]
+    d_final_ortho_training_accuracy = [evaluate_classifier_top_k_accuracy(i, y_train, 1) for i in d_final_ortho_training_predictions]
+    d_final_non_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_final_non_ortho_test_predictions]
+    d_final_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_final_ortho_test_predictions]
+
+
+    f, axarr = plt.subplots(2,2)
+
+    if dataset == 'fashion_mnist':
+        x = range(4, 37, 2)
+    else:
+        x = range(2, 37, 2)
+
+
+    """
+    D_final
+    """
+
+    axarr[0,0].plot(x,d_final_non_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:blue')
+    axarr[0,0].plot(x,d_final_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:orange')
+    axarr[0,0].plot(x,d_final_non_ortho_test_accuracy, color = 'tab:blue')
+    axarr[0,0].plot(x,d_final_ortho_test_accuracy, color = 'tab:orange')
+    axarr[0,0].plot([],[],linestyle = 'dashed', color = 'grey', label = 'Training Accuracy')
+    axarr[0,0].plot([],[],linestyle = 'solid', color = 'grey', label = 'Test Accuracy')
+    axarr[0,0].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:blue', label = 'Non-orthogonal')
+    axarr[0,0].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:orange', label = 'Orthogonal')
+
+    legend = axarr[0,0].legend(loc = 'lower right', bbox_to_anchor = (1,0.2))
+    axarr[0,0].add_artist(legend)
+
+
+    label1 = axarr[0,0].plot([],[],label = '$D_{encode} = D_{batch} = 32$', linewidth = 0)
+    legend2 = axarr[0,0].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+    #axarr[0,0].legend()
+    #legend = axarr[0,0].legend(loc = 'lower right', bbox_to_anchor = (1,0.2))
+    #axarr[0,0].add_artist(legend)
+
+    axarr[0,0].set_xticks(x)
+    axarr[0,0].set_yticks(np.arange(0.2, 0.8, 0.1))
+    axarr[0,0].set_xlabel('$D_{final}$')
+    axarr[0,0].set_ylabel('$Accuracy$')
+    axarr[0,0].grid(alpha = 0.8)
+    axarr[0,0].set_ylim([0.2,0.72])
+    axarr[0,0].set_xlim([4,36])
+    """
+    D_total
+    """
+
+    axarr[1,0].plot(x,d_total_non_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:blue')
+    axarr[1,0].plot(x,d_total_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:orange')
+    axarr[1,0].plot(x,d_total_non_ortho_test_accuracy, color = 'tab:blue')
+    axarr[1,0].plot(x,d_total_ortho_test_accuracy, color = 'tab:orange')
+    axarr[1,0].plot([],[],linestyle = 'dashed', color = 'grey', label = 'Training Accuracy')
+    axarr[1,0].plot([],[],linestyle = 'solid', color = 'grey', label = 'Test Accuracy')
+    axarr[1,0].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:blue', label = 'Non-orthogonal')
+    axarr[1,0].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:orange', label = 'Orthogonal')
+
+
+    #legend = axarr[0,0].legend(loc = 'lower right', bbox_to_anchor = (1,0.2))
+    #axarr[0,0].add_artist(legend)
+
+    axarr[1,0].set_xticks(x)
+    axarr[1,0].set_yticks(np.arange(0.3, 0.8, 0.1))
+    axarr[1,0].set_xlabel('$D_{total}$')
+    axarr[1,0].set_ylabel('$Accuracy$')
+    axarr[1,0].grid(alpha = 0.8)
+    axarr[1,0].set_xlim([min(x),max(x)])
+
+    label1 = axarr[1,0].plot([],[],label = '$D_{encode} = D_{batch} = D_{final}$', linewidth = 0)
+    legend2 = axarr[1,0].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+
+
+    """
+    #############################
+    TTO
+    #############################
+    """
+
+    d_total_non_ortho_training_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_total/non_ortho_d_total_vs_training_accuracies_tto.npy')[::-1]
+    d_total_ortho_training_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_total/ortho_d_total_vs_training_accuracies_tto.npy')[::-1]
+    d_total_non_ortho_test_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_total/non_ortho_d_total_vs_test_accuracies_tto.npy')[::-1]
+    d_total_ortho_test_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_total/ortho_d_total_vs_test_accuracies_tto.npy')[::-1]
+
+    d_final_non_ortho_training_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_final/non_ortho_d_final_vs_training_accuracies_tto.npy')[::-1]
+    d_final_ortho_training_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_final/ortho_d_final_vs_training_accuracies_tto.npy')[::-1]
+    d_final_non_ortho_test_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_final/non_ortho_d_final_vs_test_accuracies_tto.npy')[::-1]
+    d_final_ortho_test_accuracy = np.load('data/batch_adding_results/' + dataset + '/D_final/ortho_d_final_vs_test_accuracies_tto.npy')[::-1]
+
+
+    """
+    D_final
+    """
+    x_2 = range(2, 17, 1)
+
+    axarr[0,1].plot(x_2,d_final_non_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:blue')
+    axarr[0,1].plot(x_2,d_final_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:orange')
+    axarr[0,1].plot(x_2,d_final_non_ortho_test_accuracy, color = 'tab:blue')
+    axarr[0,1].plot(x_2,d_final_ortho_test_accuracy, color = 'tab:orange')
+    axarr[0,1].plot([],[],linestyle = 'dashed', color = 'grey', label = 'Training Accuracy')
+    axarr[0,1].plot([],[],linestyle = 'solid', color = 'grey', label = 'Test Accuracy')
+    axarr[0,1].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:blue', label = 'Non-orthogonal')
+    axarr[0,1].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:orange', label = 'Orthogonal')
+
+
+    #legend = axarr[0,0].legend(loc = 'lower right', bbox_to_anchor = (1,0.2))
+    #axarr[0,0].add_artist(legend)
+
+    axarr[0,1].set_xticks(x_2)
+    axarr[0,1].set_yticks(np.arange(0.1, 0.86, 0.1))
+    axarr[0,1].set_xlabel('$D_{final}$')
+    axarr[0,1].set_ylabel('$Accuracy$')
+    axarr[0,1].grid(alpha = 0.8)
+    axarr[0,1].set_xlim([2,16])
+
+    label1 = axarr[0,1].plot([],[],label = '$D_{encode} = D_{batch} = 16$', linewidth = 0)
+    legend2 = axarr[0,1].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+
+    """
+    D_total
+    """
+
+    axarr[1,1].plot(x_2,d_total_non_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:blue')
+    axarr[1,1].plot(x_2,d_total_ortho_training_accuracy, linestyle = 'dashed', color = 'tab:orange')
+    axarr[1,1].plot(x_2,d_total_non_ortho_test_accuracy, color = 'tab:blue')
+    axarr[1,1].plot(x_2,d_total_ortho_test_accuracy, color = 'tab:orange')
+    axarr[1,1].plot([],[],linestyle = 'dashed', color = 'grey', label = 'Training Accuracy')
+    axarr[1,1].plot([],[],linestyle = 'solid', color = 'grey', label = 'Test Accuracy')
+    axarr[1,1].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:blue', label = 'Non-orthogonal')
+    axarr[1,1].plot([],[],linewidth = 0, marker = '.', markersize = 12, color = 'tab:orange', label = 'Orthogonal')
+
+
+    #legend = axarr[0,0].legend(loc = 'lower right', bbox_to_anchor = (1,0.2))
+    #axarr[0,0].add_artist(legend)
+
+    axarr[1,1].set_xticks(x_2)
+    axarr[1,1].set_yticks(np.arange(0.1, 0.86, 0.1))
+    axarr[1,1].set_xlabel('$D_{total}$')
+    axarr[1,1].set_ylabel('$Accuracy$')
+    axarr[1,1].grid(alpha = 0.8)
+    axarr[1,1].set_xlim([2,16])
+
+    label1 = axarr[1,1].plot([],[],label = '$D_{encode} = D_{batch} = D_{final}$', linewidth = 0)
+    legend2 = axarr[1,1].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+
+
+    f.tight_layout()
+    #plt.savefig('test.pdf')
+    plt.show()
+
+    assert()
+
+def acc_vs_d_encode_d_batch_d_final_paper_figure(dataset):
+
+    """
+    #############################
+    MPO
+    #############################
+    """
+    t = 10000
+    """
+    D_batch
+    """
+
+    d_batch_d_final_10_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_batch/D_final_10_ortho_d_total_vs_test_predictions.npy')[int(dataset == 'fashion_mnist'):,:t,:]
+    d_batch_d_final_20_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_batch/D_final_20_ortho_d_total_vs_test_predictions.npy')[int(dataset == 'fashion_mnist'):,:t,:]
+    d_batch_d_final_32_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_batch/D_final_32_ortho_d_total_vs_test_predictions.npy')[int(dataset == 'fashion_mnist'):,:t,:]
+
+    n_test_samples = d_batch_d_final_10_ortho_test_predictions.shape[1]
+
+    x_train, y_train, x_test, y_test = load_data(
+        10,n_test_samples, shuffle=False, equal_numbers=True, dataset = dataset
+    )
+
+    d_batch_d_final_10_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_batch_d_final_10_ortho_test_predictions]
+    d_batch_d_final_20_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_batch_d_final_20_ortho_test_predictions]
+    d_batch_d_final_32_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_batch_d_final_32_ortho_test_predictions]
+
+    """
+    D_encode
+    """
+
+    d_encode_d_final_10_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_encode/D_final_10_ortho_d_total_vs_test_predictions.npy')[:,:t,:]
+    d_encode_d_final_20_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_encode/D_final_20_ortho_d_total_vs_test_predictions.npy')[:,:t,:]
+    d_encode_d_final_32_ortho_test_predictions = np.load('data/batch_adding_results/' + dataset + '/D_encode/D_final_32_ortho_d_total_vs_test_predictions.npy')[:,:t,:]
+
+    d_encode_d_final_10_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_encode_d_final_10_ortho_test_predictions]
+    d_encode_d_final_20_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_encode_d_final_20_ortho_test_predictions]
+    d_encode_d_final_32_ortho_test_accuracy = [evaluate_classifier_top_k_accuracy(i, y_test, 1) for i in d_encode_d_final_32_ortho_test_predictions]
+
+
+    f, axarr = plt.subplots(2,2)
+
+    if dataset == 'fashion_mnist':
+        x = range(4, 34, 2)
+    else:
+        x = range(2, 34, 2)
+
+
+    """
+    D_batch
+    """
+
+    axarr[0,0].plot(x,d_batch_d_final_10_ortho_test_accuracy, color = 'tab:blue', label = '$D_{final} = 10$')
+    axarr[0,0].plot(x,d_batch_d_final_20_ortho_test_accuracy, color = 'tab:orange', label = '$D_{final} = 20$')
+    axarr[0,0].plot(x,d_batch_d_final_32_ortho_test_accuracy, color = 'tab:green', label = '$D_{final} = 32$')
+
+    legend = axarr[0,0].legend(loc = 'lower right', bbox_to_anchor = (1,0.2))
+    axarr[0,0].add_artist(legend)
+
+    label1 = axarr[0,0].plot([],[],label = '$D_{encode} = 32$', linewidth = 0)
+    legend2 = axarr[0,0].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+
+
+    axarr[0,0].set_xticks(x)
+    axarr[0,0].set_yticks(np.arange(0.1, 0.9, 0.1))
+    axarr[0,0].set_xlabel('$D_{batch}$')
+    axarr[0,0].set_ylabel('$Test$'+ ' '+ '$Accuracy$')
+    axarr[0,0].grid(alpha = 0.8)
+    #axarr[0,0].set_ylim([0.2,0.72])
+    axarr[0,0].set_xlim([min(x),max(x)])
+
+    """
+    D_encode
+    """
+    print(d_encode_d_final_10_ortho_test_accuracy)
+    axarr[1,0].plot(x,d_encode_d_final_10_ortho_test_accuracy, color = 'tab:blue', label = '$D_{final} = 10$')
+    axarr[1,0].plot(x,d_encode_d_final_20_ortho_test_accuracy, color = 'tab:orange', label = '$D_{final} = 20$')
+    axarr[1,0].plot(x,d_encode_d_final_32_ortho_test_accuracy, color = 'tab:green', label = '$D_{final} = 32$')
+
+
+    label1 = axarr[1,0].plot([],[],label = '$D_{batch} = 32$', linewidth = 0)
+    legend2 = axarr[1,0].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+
+
+    axarr[1,0].set_xticks(x)
+    axarr[1,0].set_yticks(np.arange(0.63, 0.72, 0.01))
+    axarr[1,0].set_xlabel('$D_{encode}$')
+    axarr[1,0].set_ylabel('$Test$'+ ' '+ '$Accuracy$')
+    axarr[1,0].grid(alpha = 0.8)
+    #axarr[0,0].set_ylim([0.2,0.72])
+    axarr[1,0].set_xlim([min(x),max(x)])
+
+    """
+    #############################
+    TTO
+    #############################
+    """
+
+    d_encode_ortho_test_accuracy_too = np.load('data/batch_adding_results/' + dataset + '/D_encode/ortho_d_encode_vs_test_accuracies_tto.npy')
+    d_batch_ortho_test_accuracy_too = np.load('data/batch_adding_results/' + dataset + '/D_batch/ortho_d_batch_vs_test_accuracies_tto.npy')
+
+    """
+    D_batch
+    """
+    x_2 = range(2, 17, 1)
+
+    axarr[0,1].plot(x_2,d_batch_ortho_test_accuracy_too[2][::-1], color = 'tab:red', label = '$D_{final} = 4$')
+    axarr[0,1].plot(x_2,d_batch_ortho_test_accuracy_too[1][::-1], color = 'tab:purple', label = '$D_{final} = 8$')
+    axarr[0,1].plot(x_2,d_batch_ortho_test_accuracy_too[0][::-1], color = 'tab:brown', label = '$D_{final} = 16$')
+
+    legend = axarr[0,1].legend(loc = 'upper left')#, bbox_to_anchor = (1,0.2))
+    axarr[0,1].add_artist(legend)
+
+    label1 = axarr[0,1].plot([],[],label = '$D_{encode} = 16$', linewidth = 0)
+    legend2 = axarr[0,1].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+
+    axarr[0,1].set_xticks(x_2)
+    axarr[0,1].set_yticks(np.arange(0.1, 0.9, 0.1))
+    axarr[0,1].set_xlabel('$D_{batch}$')
+    axarr[0,1].set_ylabel('$Test$'+ ' '+ '$Accuracy$')
+    axarr[0,1].grid(alpha = 0.8)
+    #axarr[0,0].set_ylim([0.2,0.72])
+    axarr[0,1].set_xlim([min(x_2),max(x_2)])
+
+    """
+    D_encode
+    """
+
+    axarr[1,1].plot(x_2,d_encode_ortho_test_accuracy_too[2][::-1], color = 'tab:red', label = '$D_{final} = 4$')
+    axarr[1,1].plot(x_2,d_encode_ortho_test_accuracy_too[1][::-1], color = 'tab:purple', label = '$D_{final} = 8$')
+    axarr[1,1].plot(x_2,d_encode_ortho_test_accuracy_too[0][::-1], color = 'tab:brown', label = '$D_{final} = 16$')
+
+
+    label1 = axarr[1,1].plot([],[],label = '$D_{batch} = 16$', linewidth = 0)
+    legend2 = axarr[1,1].legend(handles=label1, loc='lower right',handlelength=0, handletextpad=-0.1, bbox_to_anchor = (0.979,0.0))
+
+    axarr[1,1].set_xticks(x_2)
+    axarr[1,1].set_yticks(np.arange(0.575, 0.725, 0.025))
+    axarr[1,1].set_xlabel('$D_{encode}$')
+    axarr[1,1].set_ylabel('$Test$'+ ' '+ '$Accuracy$')
+    axarr[1,1].grid(alpha = 0.8)
+    #axarr[0,0].set_ylim([0.2,0.72])
+    axarr[1,1].set_xlim([min(x_2),max(x_2)])
+
+
+    f.tight_layout()
+    #plt.savefig('test.pdf')
+    plt.show()
+
+    assert()
 
 def acc_vs_d_total_figure():
 
@@ -211,7 +555,7 @@ def acc_vs_d_encode_d_batch_d_final():
 
 
 
-    plt.savefig('fashion_acc_vs_d_batch_d_encode.pdf')
+    #plt.savefig('fashion_acc_vs_d_batch_d_encode.pdf')
     plt.show()
     assert()
 
@@ -1017,22 +1361,89 @@ def plot_confusion_matrix(dataset):
     axarr[1].set_yticklabels(permutation)
 
     plt.tight_layout()
-    plt.savefig('figures/' + dataset + '_rearranged_psuedo_overlap.pdf')
+    #plt.savefig('figures/' + dataset + '_rearranged_psuedo_overlap.pdf')
     plt.show()
 
+def plot_tensor_network_stacking():
+    mnist_results = [np.load(f'Classifiers/mnist_tensor_network_stacking_D_batch_{D}.npy') for D in [32,64,128,256,512]]
+    fashion_mnist_results = [np.load(f'Classifiers/fashion_mnist_tensor_network_stacking_D_batch_{D}.npy') for D in [32,64,128,256,512]]
 
+    mnist_test_label_qubits = np.load('data/mnist/ortho_d_final_vs_test_predictions.npy')[15]
+    mnist_y_test = np.load('data/mnist/ortho_d_final_vs_test_predictions_labels.npy')
+    mnist_initial_results = evaluate_classifier_top_k_accuracy(mnist_test_label_qubits, mnist_y_test, 1)
+
+    fashion_mnist_test_label_qubits = np.load('data/fashion_mnist/ortho_d_final_vs_test_predictions.npy')[15]
+    fashion_mnist_y_test = np.load('data/fashion_mnist/ortho_d_final_vs_test_predictions_labels.npy')
+    fashion_mnist_initial_results = evaluate_classifier_top_k_accuracy(fashion_mnist_test_label_qubits, fashion_mnist_y_test, 1)
+
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+
+    for i, j, c, d in zip(mnist_results, ['solid', 'dashed', 'dotted','dashdot','solid'], ['tab:blue', 'tab:orange', 'tab:green', 'tab:purple','black'], [32,64,128,256,512]):
+        if len(i) < 13:
+            ax1.plot(range(1,len(i)+1),i, linestyle = j, color = c, label = f'Bond Order: {d}')
+        else:
+            ax1.plot(range(1,14),i[:13], linestyle = j, color = c, label = f'Bond Order: {d}')
+
+    for i, j, c, d in zip(fashion_mnist_results, ['solid', 'dashed', 'dotted', 'dashdot','solid'], ['tab:blue', 'tab:orange', 'tab:green','tab:purple','black'], [32,64,128,256,512]):
+        if len(i) < 13:
+            ax2.plot(range(1,len(i) + 1),i, linestyle = j, color = c, label = f'Bond Order: {d}')
+        else:
+            ax2.plot(range(1,14),i[:13], linestyle = j, color = c, label = f'Bond Order: {d}')
+
+    ax1.axhline(mnist_initial_results, alpha = 0.4, color = 'r', label = 'Initial Accuracy')
+    ax1.set_xlabel('Number of Copies')
+    ax1.set_ylabel('Test Accuracy')
+    ax1.set_title('MNIST')
+    ax1.set_xlim([1,13])
+    #ax1.set_ylim([np.min(mnist_results[0])-0.005,np.max(mnist_results[-1])+0.005])
+    ax1.set_xticks(range(1,14))
+    ax1.set_yticks(np.linspace(0.72,0.86,16))
+    ax1.set_yticklabels([f'{i:.2f}' if j % 2 == 0 else None for j,i in enumerate(np.linspace(0.72,0.86,16))])
+    ax1.legend()
+    ax1.grid(alpha = 0.8)
+
+    ax2.axhline(fashion_mnist_initial_results, alpha = 0.4, color = 'r', label = 'Initial Accuracy')
+    ax2.set_ylabel('Test Accuracy')
+    ax2.set_xlabel('Number of Copies')
+    ax2.set_title('FASHION MNIST')
+    ax2.set_xlim([1,13])
+    #ax2.set_ylim([np.min(fashion_mnist_results[0])-0.005,np.max(fashion_mnist_results[-1])+0.005])
+
+    ax2.set_xticks(range(1,14))
+    ax2.set_yticks(np.linspace(0.5,0.75,11))
+    ax2.set_yticklabels([f'{i:.2f}' if j % 2 == 0 else None for j,i in enumerate(np.linspace(0.5,0.75,11))])
+
+
+    ax2.legend()
+    ax2.grid(alpha = 0.8)
+    """
+    plt.plot(range(1,len(results)+1),results, label = 'Stacking Results')
+    plt.axhline(initial_results, alpha = 0.4, label = 'Initial Test Accuracy', color = 'r', linestyle = 'dashed')
+    plt.xlabel('Number of copies')
+    plt.ylabel('Test Accuracy')
+    plt.xticks(range(1,len(results)+1,2))
+    plt.legend()
+    plt.savefig('figures/mnist_tensor_network_stacking_results.pdf')
+    """
+    fig.set_size_inches(12.5, 4.5)
+    #plt.savefig('mps_stacking.pdf')
+
+    #plt.tight_layout()
+    plt.show()
 
 if __name__ == '__main__':
-    print(produce_psuedo_sum_states('mnist').shape)
+    acc_vs_d_encode_d_batch_d_final_paper_figure('fashion_mnist')
     assert()
-    #x_train, y_train, x_test, y_test = load_data(
-    #    100, shuffle=False, equal_numbers=True
-    #)
-    #bitstrings = create_experiment_bitstrings(x_train, y_train)
+    #print(produce_psuedo_sum_states('mnist').shape)
+    #assert()
+    x_train, y_train, x_test, y_test = load_data(
+        100, shuffle=False, equal_numbers=True
+    )
+    bitstrings = create_experiment_bitstrings(x_train, y_train)
     #overlaps = produce_psuedo_sum_states('mnist')
     #brute_force_permutations(overlaps,'mnist')
-    plot_confusion_matrix('mnist')
+    #plot_confusion_matrix('mnist')
     #compute_predictions_confusion_matrix(bitstrings, rearrange = True)
     #test_rearrangement(bitstrings)
-    #compute_sum_states_confusion_matrix(bitstrings)
+    compute_sum_states_confusion_matrix(bitstrings)
     #plot_confusion_matrix('fashion_mnist')

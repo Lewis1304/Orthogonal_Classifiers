@@ -234,8 +234,8 @@ Get predictions
 def get_D_total_predictions():
     print('OBTAINING D_TOTAL PREDICTIONS')
 
-    #n_train_samples = 5421*10
-    n_train_samples = 1000
+    n_train_samples = 5421*10
+    #n_train_samples = 1000
     n_test_samples = 10000
     #n_test_samples = 1000
 
@@ -292,9 +292,9 @@ def get_D_total_predictions():
 def get_D_final_predictions():
     print('OBTAINING D_FINAL PREDICTIONS')
 
-    #n_train_samples = 5421*10
+    n_train_samples = 5421*10
     #n_train_samples = 60000
-    n_train_samples = 1000
+    #n_train_samples = 1000
     n_test_samples = 10000
     #n_test_samples = 1000
 
@@ -329,25 +329,25 @@ def get_D_final_predictions():
         ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data).squeeze()
 
         #print('Training predicitions: ')
-        #non_ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
-        #ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+        non_ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+        ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
 
         #print('Test predicitions: ')
         non_ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
         ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
 
 
-        #non_ortho_training_predictions.append(non_ortho_training_prediction)
-        #ortho_training_predictions.append(ortho_training_prediction)
+        non_ortho_training_predictions.append(non_ortho_training_prediction)
+        ortho_training_predictions.append(ortho_training_prediction)
         non_ortho_test_predictions.append(non_ortho_test_prediction)
         ortho_test_predictions.append(ortho_test_prediction)
 
-        #print('D_total non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
-        #print('D_total ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
+        print('D_total non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
+        print('D_total ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
         #assert()
 
-        #np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_training_predictions_compressed", non_ortho_training_predictions)
-        #np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_training_predictions_compressed", ortho_training_predictions)
+        np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_training_predictions_compressed", non_ortho_training_predictions)
+        np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_training_predictions_compressed", ortho_training_predictions)
         np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_test_predictions", non_ortho_test_predictions)
         np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_test_predictions", ortho_test_predictions)
 
@@ -695,7 +695,8 @@ def tensor_network_stacking_experiment(dataset, max_n_copies):
 
 
 if __name__ == "__main__":
-    tensor_network_stacking_experiment('mnist', 16)
+    get_D_final_predictions()
+    #tensor_network_stacking_experiment('mnist', 16)
     assert()
     #obtain_D_encode_preds()
     #single_image_sv, sum_state_sv = mps_image_singular_values()

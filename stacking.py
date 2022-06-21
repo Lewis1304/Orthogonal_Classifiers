@@ -216,8 +216,11 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, datase
     from numpy import linalg as LA
     print('Dataset: ', dataset)
 
-    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
-    y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
+    #initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]
+    #y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
+    initial_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+
     initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
 
     possible_labels = list(set(y_train))
@@ -245,15 +248,17 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, datase
 
         #print('Performing SVD!')
         U, S = svd(weighted_outer_states)[:2]
-        print(U.shape)
-        print(S.shape)
-        assert()
+        #print(U.shape)
+        #print(S.shape)
+        #assert()
         if v_col:
             #a = b = 16**n (using andrew's defn)
             a, b = U.shape
             p = int(np.log10(b)) - 1
             D_trunc = 16
             Vl = np.array(U[:, :b//16] @ np.sqrt(np.diag(S)[:b//16, :b//16]))
+            print(Vl.shape)
+            assert()
             #Vl = np.array(U[:, :10**p] @ np.sqrt(np.diag(S)[:10**p, :10**p]))
             #Vl = np.array(U[:, :D_trunc] @ np.sqrt(np.diag(S)[:D_trunc, :D_trunc]))
         else:
@@ -271,8 +276,6 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, datase
         a, b = V.shape
         V = np.pad(V, ((0,dim_l - a), (0,0)))
     #np.save('V', V)
-    print(V.shape)
-    assert()
     print('Performing Polar Decomposition!')
     U = polar(V)[0]
     print('Finished Computing Stacking Unitary!')
@@ -514,38 +517,46 @@ def stacking_on_confusion_matrix(max_copies, dataset = 'fashion_mnist'):
     plt.show()
 
 def plot_confusion_matrix(dataset = 'fashion_mnist'):
-    total_results = np.load(dataset + '_stacked_confusion_matrix(copy).npy')
+    total_results = np.load('Classifiers/' + dataset + '_stacked_confusion_matrix(copy).npy')
     permutation = load_brute_force_permutations(10,dataset)[1]
 
+    if dataset == 'fashion_mnist':
+        dataset = 'FASHION MNIST'
+    else:
+        dataset = 'MNIST'
     f, axarr = plt.subplots(1,4)
     axarr[0].imshow(total_results[0], cmap = "Greys")
-    axarr[0].set_title(dataset + '\n No Stacking')
+    axarr[0].set_title('\n No Stacking')
     axarr[0].set_xticks(range(10))
     axarr[0].set_yticks(range(10))
     axarr[0].set_xticklabels(permutation)
     axarr[0].set_yticklabels(permutation)
     color = ['black','black','white','black','black']
     for i in range(len(total_results[0])):
-        for k, j in enumerate(range(-2,3)):
-            if i + j > -1 and i + j < 10:
-                axarr[0].text(i,i+j,np.round(total_results[0][i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+        axarr[0].text(i,i,f'{total_results[0][i,i]:.2f}', color = 'white', ha="center", va="center", fontsize = 7, fontweight = 'bold')
 
     for n_copies in range(2 + 1):
 
         axarr[n_copies+1].imshow(total_results[n_copies+1], cmap = "Greys")
-        axarr[n_copies+1].set_title(dataset + f'\n Stacking: Copies = {n_copies+1}')
+        axarr[n_copies+1].set_title(f'Stacking:\n Copies = {n_copies+1}')
         axarr[n_copies+1].set_xticks(range(10))
         axarr[n_copies+1].set_yticks(range(10))
         axarr[n_copies+1].set_xticklabels(permutation)
         axarr[n_copies+1].set_yticklabels(permutation)
-        for i in range(len(total_results[n_copies+1])):
-            for k, j in enumerate(range(-2,3)):
-                if i + j > -1 and i + j < 10:
-                    axarr[n_copies+1].text(i,i+j,np.round(total_results[n_copies+1].T[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
+        for i in range(len(total_results[0])):
+            axarr[n_copies+1].text(i,i,f'{total_results[n_copies+1].T[i,i]:.2f}', color = 'white', ha="center", va="center", fontsize = 7, fontweight = 'bold')
+        #for i in range(len(total_results[n_copies+1])):
+        #    for k, j in enumerate(range(-2,3)):
+        #        if i + j > -1 and i + j < 10:
+        #            axarr[n_copies+1].text(i,i+j,np.round(total_results[n_copies+1].T[i,i+j],3), color = color[k], ha="center", va="center", fontsize = 6)
 
         #np.save(dataset + '_stacked_confusion_matrix', total_results)
-    #f.tight_layout()
-    #plt.savefig(dataaset + '_stacking_confusion_matrix_results.pdf')
+    f.tight_layout()
+    plt.suptitle(dataset, y = 0.9)
+    f.set_size_inches(12.5, 4.5)
+
+    plt.savefig(dataset + '_stacking_confusion_matrix_results.pdf')
+    #plt.savefig('test.pdf')
     plt.show()
 
 def mps_stacking(dataset, n_copies):
@@ -587,13 +598,13 @@ def mps_stacking(dataset, n_copies):
 
 if __name__ == '__main__':
     #mps_stacking('mnist',1)
-    U = delta_efficent_deterministic_quantum_stacking(0, v_col = True, dataset = 'mnist')
-    evaluate_stacking_unitary(U, dataset = 'mnist')
-    assert()
+    U = delta_efficent_deterministic_quantum_stacking(1, v_col = True, dataset = 'mnist')
+    #evaluate_stacking_unitary(U, dataset = 'mnist')
+    #assert()
     #U = test(1, dataset = 'fashion_mnist')
     #classical_stacking()
     #assert()
-    #plot_confusion_matrix('fashion_mnist')
+    #plot_confusion_matrix('mnist')
     #results = []
     #for i in range(1,10):
     #    print('NUMBER OF COPIES: ',i)

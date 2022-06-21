@@ -22,10 +22,15 @@ Data tools
 """
 
 
-def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False):
-    #mnist = tf.keras.datasets.fashion_mnist
-    mnist = tf.keras.datasets.mnist
-    (x_train, y_train), (x_test, y_test) = mnist.load_data()
+def load_data(n_train, n_test=10, shuffle=False, equal_numbers=False, dataset = 'mnist'):
+    if dataset == 'mnist':
+        ds = tf.keras.datasets.mnist
+    elif dataset == 'fashion_mnist':
+        ds = tf.keras.datasets.fashion_mnist
+    else:
+        assert()
+
+    (x_train, y_train), (x_test, y_test) = ds.load_data()
 
     if shuffle:
         r_train = np.arange(len(x_train))
