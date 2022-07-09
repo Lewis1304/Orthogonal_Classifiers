@@ -30,9 +30,7 @@ Encode Bitstrings
 """
 
 
-def create_hairy_bitstrings_data(
-    possible_labels, n_sites
-):
+def create_hairy_bitstrings_data(possible_labels, n_sites):
 
     bitstrings = create_bitstrings(possible_labels)
 
@@ -51,9 +49,7 @@ def create_hairy_bitstrings_data(
     return untruncated
 
 
-def create_padded_bitstrings_data(possible_labels,
-    uclassifier
-):
+def create_padded_bitstrings_data(possible_labels,uclassifier):
     #Only for onesite at the moment.
     if not (uclassifier.tensors[-2].shape[1] < uclassifier.tensors[-1].shape[1]):
         raise Exception('Only works for one site classifiers at the moment')
@@ -159,9 +155,7 @@ def create_mpo_classifier(mps_train, q_hairy_bitstrings, seed=None, full_sized=F
     return mpo_classifier
 
 
-def create_mpo_classifier_from_initialised_classifier(
-    initialised_classifier, seed=420
-):
+def create_mpo_classifier_from_initialised_classifier(initialised_classifier, seed=420):
 
     # Create MPO classifier
     tensors = []

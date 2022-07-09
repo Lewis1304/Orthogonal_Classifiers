@@ -110,9 +110,7 @@ Prepare classifier
 """
 
 
-def prepare_batched_classifier(
-    mps_train, labels, q_hairy_bitstrings, D_batch, batch_nums, prep_sum_states = False
-):
+def prepare_batched_classifier(mps_train, labels, q_hairy_bitstrings, D_batch, batch_nums, prep_sum_states = False):
 
     train_mpos = mpo_encoding(mps_train, labels, q_hairy_bitstrings)
 
@@ -136,9 +134,7 @@ def prepare_batched_classifier(
             i += 1
         return MPOs[0]
 
-def prepare_batched_fmps_classifier(
-    mps_train, labels, D_batch, batch_nums, prep_sum_states = False
-):
+def prepare_batched_fmps_classifier(mps_train, labels, D_batch, batch_nums, prep_sum_states = False):
 
     # Converting qMPOs into fMPOs
     fMPSs = [fMPS([site.data for site in mpo.tensors]) for mpo in mps_train]
@@ -266,7 +262,6 @@ def unitary_extension(Q):
     N1 = null_space(Q)
     N2 = null_space(Q.conj().T)
 
-
     if s[0]>s[1]:
         Q_ = np.concatenate([Q, N2], 1)
     elif s[0]<s[1]:
@@ -277,30 +272,30 @@ def unitary_extension(Q):
 
 def unitary_qtn(qtn):
     #Only works for powers of bond dimensions which are (due to reshaping of tensors)
+    #assumes centre gauge
     D_max = max([tensor.shape[-1] for tensor in qtn.tensors])
     if not mlog(D_max,2).is_integer():
         raise Exception('Classifier has to have bond order of power 2!')
 
+    centre_site = np.argmax([i.shape[1] for i in qtn.tensors])
     data = []
-    for tensor in qtn.tensors:
-        site = tensor.data
+    for m in range(centre_site+1):
+        site = qtn.tensors[m].data
         d, s, i, j = site.shape
-
         site = site.transpose(0, 2, 1, 3).reshape(d * i, s * j)
-        if not np.isclose(site @ site.conj().T, np.eye(d*i)).all() or not np.isclose(site.conj().T @ site, np.eye(s*j)).all():
+        #print(*np.real(np.round(site @ site.conj().T,1)), sep = '\n')
+        usite = unitary_extension(site)
+        usite = usite.reshape(d, i, -1, j).transpose(0, 2, 1, 3)
+        data.append(usite)
 
-            usite = unitary_extension(site)
-            #print(usite.conj().T @ usite)
-
-            #assert np.isclose(usite.conj().T @ usite, np.eye(usite.shape[0])).all()
-            #assert np.isclose(usite @ usite.conj().T, np.eye(usite.shape[0])).all()
-            usite = usite.reshape(d, i, -1, j).transpose(0, 2, 1, 3)
-            data.append(usite)
-        else:
-            data.append(site.reshape(d, i, -1, j).transpose(0, 2, 1, 3))
-
-    uclassifier = data_to_QTN(data)
-    return uclassifier
+    for m in range(centre_site+1, qtn.num_tensors):
+        site = qtn.tensors[m].data
+        d, s, i, j = site.shape
+        site = site.transpose(2, 1, 3, 0).reshape(i * s, j * d)
+        usite = unitary_extension(site)
+        usite = usite.reshape(i, -1, j, d).transpose(3,1,0,2)
+        data.append(usite)
+    return data_to_QTN(data)
 
 if __name__ == "__main__":
     batch_initialise_classifier()

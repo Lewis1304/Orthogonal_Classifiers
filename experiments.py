@@ -269,9 +269,9 @@ def get_D_total_predictions():
         ortho_classifier_data = adding_centre_batches(sum_states_data, D_total, 10, orthogonalise = True)[0]
         ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data).squeeze()
 
-        #print('Training predicitions: ')
+        print('Training predicitions: ')
         #non_ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
-        #ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+        ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
 
         #print('Test predicitions: ')
         #non_ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
@@ -285,9 +285,9 @@ def get_D_total_predictions():
         print('D_total ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
 
         #np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "non_ortho_d_total_vs_training_predictions", non_ortho_training_predictions)
-        #np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "ortho_d_total_vs_training_predictions", ortho_training_predictions)
+        np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "new_ortho_d_total_vs_training_predictions", ortho_training_predictions)
         #np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "non_ortho_d_total_vs_test_predictions", non_ortho_test_predictions)
-        np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_test_predictions", ortho_test_predictions)
+        np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "new_ortho_d_final_vs_test_predictions", ortho_test_predictions)
 
 def get_D_final_predictions():
     print('OBTAINING D_FINAL PREDICTIONS')
@@ -691,8 +691,6 @@ def tensor_network_stacking_experiment(dataset, max_n_copies):
     for i in range(max_n_copies):
         result = mps_stacking(training_mps_predictions, test_mps_predictions, i, y_train, y_test)
         np.save('tensor_network_stacking', result)
-
-
 
 if __name__ == "__main__":
     get_D_final_predictions()

@@ -130,9 +130,6 @@ def shuffle_arranged_data(data, labels):
     return shuffled_data, shuffled_labels
 
 
-
-
-
 """
 Bitstring tools
 """

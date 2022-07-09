@@ -5,12 +5,22 @@ from variational_mpo_classifiers import evaluate_classifier_top_k_accuracy, clas
 from plot_results import produce_psuedo_sum_states, load_brute_force_permutations
 from tools import load_data
 from scipy import sparse
-import qutip
+#import qutip
 import matplotlib.pyplot as plt
 from experiments import create_experiment_bitstrings
 
 
 from tqdm import tqdm
+
+from tools import load_qtn_classifier, data_to_QTN, arrange_data
+from fMPO import fMPO
+from experiments import adding_centre_batches
+from deterministic_mpo_classifier import unitary_qtn
+import quimb.tensor as qtn
+from quimb.tensor.tensor_core import rand_uuid
+from oset import oset
+
+
 
 def classical_stacking():
     """
@@ -115,8 +125,8 @@ def evaluate_stacking_unitary(U, partial = False, dataset = 'fashion_mnist', tra
         Load Training Data
         """
 
-        initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
-        y_train = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+        initial_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15].astype(np.float32)
+        y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
 
         """
         Rearrange test data to match new bitstring assignment
@@ -164,8 +174,8 @@ def evaluate_stacking_unitary(U, partial = False, dataset = 'fashion_mnist', tra
     """
     Load Test Data
     """
-    initial_label_qubits = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions.npy')[15]#.astype(np.float32)
-    y_test = np.load('Classifiers/' + dataset + '_mixed_sum_states/D_total/ortho_d_final_vs_test_predictions_labels.npy')#.astype(np.float32)
+    initial_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions.npy')[15]#.astype(np.float32)
+    y_test = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions_labels.npy')#.astype(np.float32)
 
     """
     Rearrange test data to match new bitstring assignment
@@ -257,8 +267,8 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, datase
             p = int(np.log10(b)) - 1
             D_trunc = 16
             Vl = np.array(U[:, :b//16] @ np.sqrt(np.diag(S)[:b//16, :b//16]))
-            print(Vl.shape)
-            assert()
+            #print(Vl.shape)
+            #assert()
             #Vl = np.array(U[:, :10**p] @ np.sqrt(np.diag(S)[:10**p, :10**p]))
             #Vl = np.array(U[:, :D_trunc] @ np.sqrt(np.diag(S)[:D_trunc, :D_trunc]))
         else:
@@ -595,12 +605,164 @@ def mps_stacking(dataset, n_copies):
     #Add bitstring onto copied states
 
 
+def peel_stacking(dataset):
+
+    def create_density_predictions(dataset):
+
+        def create_density_matrix(pred):
+            tensor1 = qtn.Tensor(
+                pred.data.reshape(16,-1), inds=("l0", "p")
+            )
+            tensor2 = qtn.Tensor(
+                pred.data.reshape(16,-1), inds=("l1", "p")
+            )
+            return (tensor1 | tensor2) ^ all
+
+        """
+        Create Classifier
+        """
+        #load sum states. Assuming D=32 classifier for now.
+        path = dataset + "_mixed_sum_states/D_total/" + f"sum_states_D_total_32/"
+
+        sum_states = [load_qtn_classifier(path + f"digit_{i}") for i in range(10)]
+        sum_states_data = [fMPO([site.data for site in sum_state.tensors]) for sum_state in sum_states]
+
+        #Add sum states together and compress
+        ortho_classifier_data = adding_centre_batches(sum_states_data, 32, 10, orthogonalise = True)[0]
+        ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data)
+
+        """
+        Turn MPO isometries to unitaries
+        """
+        u_classifier = unitary_qtn(ortho_mpo_classifier)
+
+        """
+        Create training predictions
+        """
+        x_train, y_train, x_test, y_test = load_data(
+            60000,1, shuffle=False, equal_numbers=True, dataset = dataset
+        )
+        x_train, y_train = arrange_data(x_train, y_train, arrangement='one class')
+        mps_train = mps_encoding(x_train, 32)
+
+        preds = [mps_image.H.squeeze() @ u_classifier.squeeze() for mps_image in tqdm(mps_train)]
+        """
+        Create prediction density matrices
+        """
+
+        density_preds = [create_density_matrix(pred) for pred in preds]
+        return density_preds, y_train
+
+    def create_copy_density_predictions(density_preds, n_copies):
+
+        def generate_copy_state(QTN, n_copies):
+            initial_QTN = QTN
+            for _ in range(n_copies):
+                QTN = QTN | initial_QTN
+            return relabel_QTN(QTN)
+
+        def relabel_QTN(QTN):
+            qtn_data = []
+            previous_ind = rand_uuid()
+            for j, site in enumerate(QTN.tensors):
+                next_ind = rand_uuid()
+                tensor = qtn.Tensor(
+                    np.expand_dims(np.expand_dims(site.data,-1),-1), inds=(f"l{j}",f"p{j}", previous_ind, next_ind), tags=oset([f"{j}"])
+                )
+                previous_ind = next_ind
+                qtn_data.append(tensor)
+            return qtn.TensorNetwork(qtn_data)
+        """
+        Generate copy states
+        """
+        training_copied_predictions = [generate_copy_state(pred,n_copies) for pred in density_preds]
+
+        return training_copied_predictions
+
+    n_copies = 1
+
+    d_preds, y_train = create_density_predictions(dataset)
+    copied_d_preds = create_copy_density_predictions(d_preds,n_copies)
+    fMPO_d_preds = np.array([fMPO([site.data for site in QTN.tensors]) for QTN in copied_d_preds])
+
+    unitaries = []
+
+    for l in tqdm(list(set(y_train))):
+        class_preds = fMPO_d_preds[y_train == l]
+
+        #Add predictions of same class together
+        added_preds = class_preds[0]
+        for mpo in class_preds[1:]:
+            added_preds = added_preds.add(mpo)
+
+        qtn_added_preds = data_to_QTN(added_preds.data)
+        qtn_added_preds.compress_all(max_bond = 32, inplace = True)
+
+        #first round of SVDs
+        class_unitaries = []
+        class_unitaries_dag = []
+
+        for num, site in enumerate(qtn_added_preds.tensors):
+            d,s,i,j = site.shape
+            reshaped_site = site.data.reshape(d,s*i*j)
+
+            U, _, __ = svd(reshaped_site)
+            qtn_U = qtn.Tensor(U, inds = (f's{num}', f'q{num}'), tags = f'U{num}')
+            qtn_U_dag = qtn.Tensor(U.conj().T, inds = (f'k{num}', f'w{num}'), tags = f'Ud{num}')
+
+            class_unitaries.append(qtn_U)
+            class_unitaries_dag.append(qtn_U_dag)
+
+        #second round of SVDs
+        #performs the SVDs on two tensors- not one.
+
+        #contract Us with TN
+        for num, (U, U_dag) in enumerate(zip(class_unitaries, class_unitaries_dag)):
+            qtn_added_preds = (U_dag | (qtn_added_preds | U)).contract_tags((f'U{num}', f'Ud{num}', f'{num}'))
+
+        if qtn_added_preds.num_tensors == 2:
+            #fuse together indices
+            qtn_added_preds = (qtn_added_preds ^ all).squeeze()
+            qtn_added_preds.fuse({'q': [ind for ind in qtn_added_preds.inds if 'q' in ind]}, inplace = True)
+            qtn_added_preds.fuse({'w': [ind for ind in qtn_added_preds.inds if 'w' in ind]}, inplace = True)
+
+            U, _, __ = svd(qtn_added_preds.data)
+            qtn_U = qtn.Tensor(U, inds = (f's{num}', f'q{num}'), tags = f'U{2*n_copies}')
+            qtn_U_dag = qtn.Tensor(U.conj().T, inds = (f'k{num}', f'w{num}'), tags = f'Ud{2*n_copies}')
+
+            class_unitaries.append(qtn_U)
+            class_unitaries_dag.append(qtn_U_dag)
+
+        unitaries.append(class_unitaries)
+
+    U0s = []
+    U1s = []
+    U2s = []
+
+    for l in unitaries:
+        U0s.append(l[0].data)
+        U1s.append(l[1].data)
+        U2s.append(l[2].data)
+
+    print(np.array(U0s).shape)
+    print(np.array(U1s).shape)
+    print(np.array(U2s).shape)
+
+    np.save('U0s_fixed_padding', U0s)
+    np.save('U1s_fixed_padding', U1s)
+    np.save('U2s_fixed_padding', U2s)
+
+
+
 
 if __name__ == '__main__':
+    peel_stacking('mnist')
+    assert()
+
     #mps_stacking('mnist',1)
-    U = delta_efficent_deterministic_quantum_stacking(1, v_col = True, dataset = 'mnist')
-    #evaluate_stacking_unitary(U, dataset = 'mnist')
-    #assert()
+    U = delta_efficent_deterministic_quantum_stacking(0, v_col = True, dataset = 'mnist')
+    evaluate_stacking_unitary(U, dataset = 'mnist', training = True)
+    assert()
     #U = test(1, dataset = 'fashion_mnist')
     #classical_stacking()
     #assert()
