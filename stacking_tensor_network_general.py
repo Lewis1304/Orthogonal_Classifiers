@@ -10,13 +10,38 @@ import matplotlib.pyplot as plt
 from experiments import create_experiment_bitstrings
 import tensorflow as tf
 
-from tqdm import tqdm
+np.set_printoptions(precision=4, linewidth=100000, suppress=True, threshold=np.inf)
 
+from tqdm import tqdm
+from functools import reduce
 from stacking import partial_trace
+
+Zmat = np.array([[1., 0.], [0., -1.]])
+Xmat = np.array([[0., 1.], [1., 0.]])
+Ymat = np.array([[0., -1.j], [1.j, 0.]])
+Imat = np.identity(2)
 
 
 def conj(unitary):
     return unitary.conjugate().transpose()
+
+
+def swap_transpose_indices(transpose_order, index_1, index_2):
+    transpose_order[index_2], transpose_order[index_1] = transpose_order[index_1], transpose_order[index_2]
+    return transpose_order
+
+
+def permute_transpose_indices(transpose_order, permutation_start):
+    new_order = transpose_order[:permutation_start]
+    to_be_permed = transpose_order[permutation_start:]
+    n = len(to_be_permed)
+    b = [[to_be_permed[i - j] for i in range(n)] for j in range(n)]
+    new_order += b
+    return transpose_order
+
+#
+# swap_transpose_indices(legs_order, 2 * (n_copies + 1) - 3, 2 * (
+#         n_copies + 1) - 2)  # Swap 1st, 2nd upwards leg with last upwards leg
 
 
 def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnist',
@@ -45,14 +70,20 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
         outer_ket_states = np.array([np.kron(i, j) for i, j in zip(outer_ket_states, initial_label_qubits)])
 
     # V = []
-    V_1, V_2, V_3 = [[] for _ in range(3)]
-    sqrt_D = 4
+    if n_copies == 1:
+        layers = [2, 1]
+    elif n_copies == 2:
+        layers = [3, 2]
+    elif n_copies == 3:
+        layers = [4, 2, 1]
+
+    v_mats = [[[] for _ in range(n_units_per_layer)] for n_units_per_layer in layers]
+    sqrt_D = 16
     D = 16
+
     proj = np.zeros((sqrt_D ** 2, sqrt_D ** 2))
     for i in range(sqrt_D):
-        for j in range(sqrt_D):
-            if i == j:
-                proj[i, j] = 1
+        proj[i, i] = 1
 
     for l in tqdm(possible_labels):
         weighted_outer_states = np.zeros((dim_lc, dim_lc), dtype=complex)
@@ -65,103 +96,182 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
             outer = np.outer(ket.conj(), ket)
             weighted_outer_states += outer
 
-        # print('Performing SVD!')
         # First layer
+        legs_order = [i for i in range(2 * (n_copies + 1))]
 
-        weighted_outer_states_svd = weighted_outer_states.reshape(*[D] * 2, *[D] * 2)
-        print(weighted_outer_states_svd.shape)
+        weighted_outer_states_svd = weighted_outer_states.reshape(*[D] * (n_copies + 1), *[D] * (n_copies + 1))
+
         U, S, V = svd(weighted_outer_states_svd.reshape(D, -1))
+        U_trunc = U[:, :sqrt_D]
+        U_truncdag = conj(U_trunc)
 
-        V_1.append(U[:, :1])
+        v_mats[0][0].append(U[:, :1])
 
-        weighted_outer_states_svd_2 = weighted_outer_states_svd.transpose(1, 0, 2, 3).reshape(D, -1)
+        legs_order = swap_transpose_indices(legs_order, (n_copies + 1), -1)  # Swap first upwards with last upwards leg
+        weighted_outer_states_svd_2 = (
+                (U_truncdag @ weighted_outer_states_svd.reshape(D, -1)).reshape(*[sqrt_D] * 1,
+                                                                                *[D] * (2 * (n_copies + 1) - 1))
+                .transpose(legs_order) @ U_trunc).transpose(legs_order)
+        legs_order = swap_transpose_indices(legs_order, (n_copies + 1), -1)  # Swap back
+
+        legs_order = swap_transpose_indices(legs_order, 0, 1)  # Swap first downwards with next downwards leg
+        weighted_outer_states_svd_2 = weighted_outer_states_svd_2.transpose(legs_order).reshape(D, -1)
         weighted_outer_states_svd_3 = weighted_outer_states_svd_2
         U, S, V = svd(weighted_outer_states_svd_3)
 
-        V_2.append(U[:, :1])
+        U_trunc = U[:, :sqrt_D]
+        U_truncdag = conj(U_trunc)
+        v_mats[0][1].append(U[:, :1])
 
-    V_1 = np.array(V_1)
-    V_2 = np.array(V_2)
-    print(V_1.shape)
-    print(V_2.shape)
+        if n_copies > 1:
+            legs_order = swap_transpose_indices(legs_order, (n_copies + 2),
+                                                -1)  # Swap second upwards with last upwards leg
+        step_no = 2
+        weighted_outer_states_svd_4 = (U_truncdag @ weighted_outer_states_svd_2).reshape(
+            *[sqrt_D] * step_no, *[D] * (n_copies - 1),
+            *[sqrt_D] * (step_no - 1), *[D] * n_copies).transpose(legs_order) @ U_trunc
+
+        if n_copies > 1:
+            legs_order = swap_transpose_indices(legs_order, (n_copies + 2), -1)  # Swap back
+            legs_order = swap_transpose_indices(legs_order, 0, n_copies)  # Swap first downwards with next downwards leg
+
+            weighted_outer_states_svd_4 = weighted_outer_states_svd_4.transpose(legs_order).reshape(D, -1)
+            weighted_outer_states_svd_5 = weighted_outer_states_svd_4
+            U, S, V = svd(weighted_outer_states_svd_5)
+
+            U_trunc = U[:, :sqrt_D]
+            U_truncdag = conj(U_trunc)
+            v_mats[0][2].append(U[:, :1])
+
+            step_no = 3
+            weighted_outer_states_svd_6 = (U_truncdag @ weighted_outer_states_svd_4).reshape(
+                *[sqrt_D] * step_no, *[D] * (n_copies - 2),
+                *[sqrt_D] * (step_no - 1), *[D] * (n_copies - 1)).transpose(legs_order) @ U_trunc
+            legs_order = swap_transpose_indices(legs_order, 0, n_copies)  # Swap back
+
+            weighted_outer_states_svd_6 = weighted_outer_states_svd_6.reshape(D, -1)
+            weighted_outer_states_svd_7 = weighted_outer_states_svd_6
+            U, S, V = svd(weighted_outer_states_svd_7)
+            U_trunc = U[:, :sqrt_D]
+            U_truncdag = conj(U_trunc)
+            v_mats[1][0].append(U[:, :1])
+
+            legs_order = swap_transpose_indices(legs_order, 0, n_copies)  # Swap back
+            step_no = 3
+            weighted_outer_states_svd_6 = (U_truncdag @ weighted_outer_states_svd_6).reshape(
+                *[sqrt_D] * step_no, *[D] * (n_copies - 2),
+                *[sqrt_D] * (step_no - 1), *[D] * (n_copies - 1)).transpose(legs_order) @ U_trunc
+            legs_order = swap_transpose_indices(legs_order, 2 * (n_copies + 1) - 2, 2 * (
+                    n_copies + 1) - 1)  # Swap 1st, 2nd upwards leg with last upwards leg
+            legs_order = swap_transpose_indices(legs_order, 2 * (n_copies + 1) - 3, 2 * (
+                    n_copies + 1) - 2)  # Swap 1st, 2nd upwards leg with last upwards leg
+
+            U = polar(weighted_outer_states_svd_4.reshape(sqrt_D ** 2, sqrt_D ** 2))[0]
+
+            v_mats[1][0].append(U[:1, :])
+        else:
+            U = polar(weighted_outer_states_svd_4.reshape(sqrt_D ** 2, sqrt_D ** 2))[0]
+
+            v_mats[1][0].append(U[:, :1])
+
+    V_1 = np.array(v_mats[0][0])
+    V_2 = np.array(v_mats[0][1])
+    if n_copies > 1:
+        V_3 = np.array(v_mats[0][2])
+        V_4 = np.array(v_mats[1][0])
+        V_5 = np.array(v_mats[1][1])
+    else:
+        V_3 = np.array(v_mats[1][0])
+
     c, d, e = V_1.shape
     V_1 = np.pad(V_1, ((0, dim_l - c), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * e, d)
+    # V_1 = np.pad(V_1, ((0, dim_l- c), (0, 0), (0, 0))).reshape(dim_l * d, e)
+
     f, g, h = V_2.shape
     V_2 = np.pad(V_2, ((0, dim_l - f), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * h, g)
-
-    print('Performing Polar Decomposition!')
-    U_1_final = polar(V_1)[0]
-    U_2_final = polar(V_2)[0]
-
-    U_1_trunc, S_1 = svd(V_1)[:2]
-    U_2_trunc, S_2 = svd(V_2)[:2]
-
-    for l in tqdm(possible_labels):
-        weighted_outer_states = np.zeros((dim_lc, dim_lc), dtype=complex)
-        for i in tqdm(initial_label_qubits[y_train == l]):
-            ket = i
-
-            for k in range(n_copies):
-                ket = np.kron(ket, i)
-
-            outer = np.outer(ket.conj(), ket)
-            weighted_outer_states += outer
-
-        # print('Performing SVD!')
-        # First layer
-        weighted_outer_states_svd = weighted_outer_states.reshape(*[D] * 2, *[D] * 2)
-        print(weighted_outer_states_svd.shape)
-        U_1_trunc = U_1_trunc[:, :sqrt_D]
-        U_1_truncdag = conj(U_1_trunc)
-        weighted_outer_states_svd_2 = (
-                    (U_1_truncdag @ weighted_outer_states_svd.reshape(D, -1)).reshape(*[sqrt_D] * 1, *[D] * 3)
-                    .transpose(0, 1, 3, 2) @ U_1_trunc).transpose(0, 1, 3, 2)
-
-        weighted_outer_states_svd_2 = weighted_outer_states_svd_2.transpose(1, 0, 2, 3).reshape(D, -1)
-
-        U_2_trunc = U_2_trunc[:, :sqrt_D]
-        U_2_truncdag = conj(U_2_trunc)
-        weighted_outer_states_svd_4 = (U_2_truncdag @ weighted_outer_states_svd_2).reshape(*[sqrt_D] * 3, *[D] * 1)
-        weighted_outer_states_svd_4 = (weighted_outer_states_svd_4 @ U_2_trunc)
-
-        print(weighted_outer_states_svd_4.shape)
-        U, S = svd(weighted_outer_states_svd_4.reshape(sqrt_D ** 2, sqrt_D ** 2))[:2]
-
-        # U = polar(weighted_outer_states_svd_4.reshape(sqrt_D ** 2, sqrt_D ** 2))[0]
-        V_3.append(U[:, :16] @ np.sqrt(np.diag(S)[:16, :16]))
-
-    V_3 = np.array(V_3)
-
-    print(V_3.shape)
+    # V_2 = np.pad(V_2, ((0, dim_l - f), (0, 0), (0, 0))).reshape(dim_l * g, h)
 
     l, m, p = V_3.shape
-    # V_3 = np.pad(V_3, ((0, 16 - l), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(128 * p, m)
-    V_3 = np.pad(V_3, ((0, 16 - l), (0, 0), (0, 0))).reshape(16, m * p)
-
+    # V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * p, m)
+    V_3 = np.pad(V_3, ((0, 256 - l), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(256 * p, m)
+    #
     # V_3 = np.pad(V_3, ((0, 256 - l), (0, 0), (0, 0))).reshape(256 * m, p)
+    # V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).reshape(dim_l * m, p)
 
-    # V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).reshape(256 * m, p)
-
-    print(V_3.shape)
-
+    print('V1', V_1.shape)
+    print('V2', V_2.shape)
+    print('V3', V_3.shape)
     print('Performing Polar Decomposition!')
+    U_1 = polar(V_1)[0]
+    U_2 = polar(V_2)[0]
     U_3 = polar(V_3)[0]
-    iden = np.identity(2)
-    # U = np.kron(iden, np.kron(U_3, iden)) @ np.kron(U_1, U_2)
-    swap_46 = build_swap_matrix((n_copies + 1) * 4, [4, 6])
-    swap_57 = build_swap_matrix((n_copies + 1) * 4, [5, 7])
-    # swap_67 = build_swap_matrix((n_copies + 1) * 4, [6, 7])
+    print('U_1', U_1.shape)
+    print('U_2', U_2.shape)
+    print('U_3', U_3.shape)
 
-    U_layer_2 = np.kron(np.kron(iden, np.kron(np.kron(iden, U_3), iden)), iden)
-    # U_layer_2 = np.kron(iden, U_3)
-    # U_3_swapped = swap_46 @ swap_57 @ U_layer_2 @ swap_57 @ swap_46
+    iden = np.identity(sqrt_D)
+    iden_16 = np.identity(D)
+    U_layer_1 = np.kron(U_1, U_2)
+    # U_layer_2 = np.kron(np.kron(iden, U_3), iden)
+    U_layer_2 = U_3
 
-    # U_3_swapped = swap_67 @ U_layer_2 @ swap_67
-    U_3_swapped = U_layer_2
+    print(U_layer_2.shape)
+    # swap_1 = build_swap_matrix((n_copies + 1) * 4, [0, 2])
+    # swap_2 = build_swap_matrix((n_copies + 1) * 4, [1, 3])
+    # swap_1 = build_swap_matrix((n_copies + 1) * 4, [4, 6])
+    # swap_2 = build_swap_matrix((n_copies + 1) * 4, [5, 7])
 
-    U = np.kron(U_1_final, U_2_final) @ U_3_swapped
+    # print(swap_1.shape)
+    # print(swap_2.shape)
+
+    # U_3_swapped =  swap_4 @ swap_3 @  swap_2 @ swap_1 @ U_layer_2 @ swap_1 @ swap_2 @ swap_3 @ swap_4
+    # U_3_swapped = swap_2 @ swap_1 @ U_layer_2 @ swap_1 @ swap_2
+
+    U = U_layer_2
+        # @ U_3_swapped
+    # U =  np.kron(iden, np.kron(iden, U_3)) @ np.kron(U_1, U_2)
+    # U =  np.kron(iden_16, U_3) @ np.kron(U_1, U_2)
+    # U =  np.kron(iden_16, U_3) @ np.kron(U_1, iden_16)
+
+    # U = np.kron(U_1, U_2) @  np.kron(iden, np.kron(iden_16, iden))
+
     print('Finished Computing Stacking Unitary!')
-    print(U_1_final.shape, U_2_final.shape, U_3.shape)
+    print(U_1.shape, U_2.shape, U_3.shape)
+
+    np.save(f'U', U)
+
+    # def swap_gate(a, b, n):
+    #     M = [np.eye(2, dtype=U.dtype) for _ in range(n)]
+    #     result = sparse.eye(2 ** n, dtype=U.dtype) - sparse.eye(2 ** n, dtype=U.dtype)
+    #
+    #     # Same as qiskit convention
+    #     # a = n-a-1
+    #     # b = n-b-1
+    #
+    #     for i in [[1, 0], [0, 1]]:
+    #         for j in [[1, 0], [0, 1]]:
+    #             M[a] = np.outer(i, j)  # |i><j|
+    #             M[b] = np.outer(j, i)  # |j><i|
+    #             swap_gate = sparse.csr_matrix(M[0])
+    #             for m in M[1:]:
+    #                 swap_gate = sparse.kron(swap_gate, sparse.csr_matrix(m))
+    #             result += swap_gate
+    #     return result
+    #
+    # I = np.eye(4 ** (n_copies + 1), dtype=U.dtype)
+    # U_circ = sparse.kron(np.outer(I[0], I[0]), U)
+    # for i in tqdm(I[1:]):
+    #     U_circ += sparse.kron(sparse.csr_matrix(np.outer(i, i)), sparse.csr_matrix(I))
+    #
+    # for i in tqdm(range(1, n_copies + 1)):
+    #     s_sparse = sparse.csr_matrix(
+    #         swap_gate(2 + 4 * (i - 1), 2 + 4 * (i - 1) + 2 * n_copies - 2 * (i - 1), 4 * (n_copies + 1)))
+    #     U_circ = s_sparse @ U_circ @ s_sparse
+    #
+    #     s_sparse = sparse.csr_matrix(
+    #         swap_gate(2 + 4 * (i - 1) + 1, 2 + 4 * (i - 1) + 2 * n_copies - 2 * (i - 1) + 1, 4 * (n_copies + 1)))
+    #     U_circ = s_sparse @ U_circ @ s_sparse
+    # return U_circ
 
     # for l in tqdm(possible_labels):
     #     weighted_outer_states = np.zeros((dim_lc, dim_lc), dtype=complex)
@@ -243,8 +353,6 @@ def quantum_stacking_V_decomposition(n_copies, v_col=True, dataset='fashion_mnis
     #
     # print('Finished Computing Stacking Unitary!')
     # print(U_1.shape, U_2.shape, U_3.shape)
-    np.save(f'U', U.astype(np.float32))
-    return U.astype(np.float32)
 
 
 def get_stacking_unitary_mps(n_copies, dataset='mnist'):
@@ -252,6 +360,100 @@ def get_stacking_unitary_mps(n_copies, dataset='mnist'):
 
     U = np.load(f'U.npy')
     return U
+
+
+#
+# def lewis_unitaries():
+#     from numpy import linalg as LA
+#     print('Dataset: ', dataset)
+#     dir = f'data/{dataset}'
+#
+#     # initial_label_qubits = np.load('Classifiers/' + dataset +
+#     # '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)[
+#     # 'arr_0'][15] y_train = np.load('Classifiers/' + dataset +
+#     # '_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy')
+#     initial_label_qubits = \
+#         np.load(f'{dir}/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle=True)['arr_0'][15]
+#     y_train = np.load(f'{dir}/ortho_d_final_vs_training_predictions_labels.npy')
+#     initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+#     possible_labels = list(set(y_train))
+#
+#     dim_l = initial_label_qubits.shape[1]
+#     outer_ket_states = initial_label_qubits
+#
+#     dim_lc = dim_l ** (1 + n_copies)
+#     V_1 = np.load('U0s.npy')[:, :1, :]
+#     V_2 = np.load('U1s.npy')[:, :1, :]
+#     V_3 = np.load('U2s.npy')[:, :1, :]
+#
+#     # V_1 = np.array(v_mats[0][0])
+#     # V_2 = np.array(v_mats[0][1])
+#     # if n_copies > 1:
+#     #     V_3 = np.array(v_mats[0][2])
+#     #     V_4 = np.array(v_mats[1][0])
+#     #     V_5 = np.array(v_mats[1][1])
+#     # else:
+#     #     V_3 = np.array(v_mats[1][0])
+#     print(V_1.shape, V_2.shape, V_3.shape)
+#
+#     c, d, e = V_1.shape
+#     # V_1 = np.pad(V_1, ((0, dim_l - c), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * e, d)
+#     V_1 = np.pad(V_1, ((0, dim_l- c), (0, 0), (0, 0))).reshape(dim_l * d, e)
+#
+#     f, g, h = V_2.shape
+#     # V_2 = np.pad(V_2, ((0, dim_l - f), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * h, g)
+#     V_2 = np.pad(V_2, ((0, dim_l - f), (0, 0), (0, 0))).reshape(dim_l * g, h)
+#
+#     l, m, p = V_3.shape
+#     # V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(dim_l * p, m)
+#     # V_3 = np.pad(V_3, ((0, 256 - l), (0, 0), (0, 0))).transpose(0, 2, 1).reshape(256 * p, m)
+#
+#     V_3 = np.pad(V_3, ((0, 256 - l), (0, 0), (0, 0))).reshape(256 * m, p)
+#     # V_3 = np.pad(V_3, ((0, dim_l - l), (0, 0), (0, 0))).reshape(dim_l * m, p)
+#
+#     print('V1', V_1.shape)
+#     print('V2', V_2.shape)
+#     print('V3', V_3.shape)
+#     print('Performing Polar Decomposition!')
+#     U_1 = polar(V_1)[0]
+#     U_2 = polar(V_2)[0]
+#     U_3 = polar(V_3)[0]
+#     print('U_1', U_1.shape)
+#     print('U_2', U_2.shape)
+#     print('U_3', U_3.shape)
+#
+#     # U_layer_1 = np.kron(U_1, U_2)
+#     U_layer_1 = np.kron(U_2, U_1)
+#
+#
+#     # U_layer_2 = np.kron(np.kron(iden, U_3), iden)
+#     U_layer_2 = U_3
+#
+#     print(U_layer_2.shape)
+#     # swap_1 = build_swap_matrix((n_copies + 1) * 4, [0, 2])
+#     # swap_2 = build_swap_matrix((n_copies + 1) * 4, [1, 3])
+#     swap_1 = build_swap_matrix((n_copies + 1) * 4, [4, 6])
+#     swap_2 = build_swap_matrix((n_copies + 1) * 4, [5, 7])
+#
+#     print(swap_1.shape)
+#     print(swap_2.shape)
+#
+#     # U_3_swapped =  swap_4 @ swap_3 @  swap_2 @ swap_1 @ U_layer_2 @ swap_1 @ swap_2 @ swap_3 @ swap_4
+#     U_3_swapped = swap_2 @ swap_1 @ U_layer_2 @ swap_1 @ swap_2
+#
+#     U = conj(U_layer_1)
+#         # @ U_3_swapped
+#
+#     # U =  np.kron(iden, np.kron(iden, U_3)) @ np.kron(U_1, U_2)
+#     # U =  np.kron(iden_16, U_3) @ np.kron(U_1, U_2)
+#     # U =  np.kron(iden_16, U_3) @ np.kron(U_1, iden_16)
+#
+#     # U = np.kron(U_1, U_2) @  np.kron(iden, np.kron(iden_16, iden))
+#
+#     print('Finished Computing Stacking Unitary!')
+#     print(U_1.shape, U_2.shape, U_3.shape)
+#
+#     np.save(f'U', U)
 
 
 def evaluate_stacking_unitary_mps(U, n_copies, dataset='fashion_mnist', training=False,
@@ -361,6 +563,7 @@ def evaluate_stacking_unitary_mps(U, n_copies, dataset='fashion_mnist', training
     """
     print('Performing Partial Trace!')
     preds_U = np.array([np.diag(partial_trace(i, [0, 1, 2, 3])) for i in tqdm(preds_U)])
+    # preds_U = np.array([np.diag(partial_trace(i, [4, 5, 6, 7])) for i in tqdm(preds_U)])
 
     test_predictions = evaluate_classifier_top_k_accuracy(preds_U, y_test, 1)
     np.save(f'hello_ortho_d_final_vs_test_predictions.npy', preds_U)
@@ -436,11 +639,6 @@ def evaluate_stacking_unitary_mps(U, n_copies, dataset='fashion_mnist', training
 #     print('Finished Computing Stacking Unitary!')
 #     return U.astype(np.float32)
 
-Zmat = np.array([[1., 0.], [0., -1.]])
-Xmat = np.array([[0., 1.], [1., 0.]])
-Ymat = np.array([[0., -1.j], [1.j, 0.]])
-Imat = np.identity(2)
-from functools import reduce
 def kron_at_position(n_qubits, qubit_indices, unitaries):
     [unitary_0, unitary_1] = unitaries
     [qubit_idx_0, qubit_idx_1] = qubit_indices
@@ -455,6 +653,7 @@ def kron_at_position(n_qubits, qubit_indices, unitaries):
                   [Imat] * ((qubit_idx_1 - 1) - qubit_idx_0) +
                   [unitary_1] +
                   [Imat] * value)
+
 
 def build_swap_matrix(n_qubits, qbs):
     # print('iterm')
@@ -472,6 +671,7 @@ def build_swap_matrix(n_qubits, qbs):
     swap = 1 / 2 * (i_term + x_term + z_term + y_term)
     return swap
 
+
 if __name__ == '__main__':
     # plot_confusion_matrix('mnist')
     # assert()
@@ -482,8 +682,16 @@ if __name__ == '__main__':
     # n_copies_list = [1,1,1,1,1,1,1,1,1,1,1]
     n_copies = 1
     quantum_stacking_V_decomposition(n_copies, v_col=True, dataset=dataset)
+    # lewis_unitaries()
     U = get_stacking_unitary_mps(n_copies, dataset=dataset)
     evaluate_stacking_unitary_mps(U, n_copies, dataset='mnist', training=False)
+    # unitaries = [Xmat, Xmat]
+    # n_qubits = 3
+    # qubit_indices = [0, 2]
+    # # U = kron_at_position(n_qubits, qubit_indices, unitaries)
+    # # print(U)
+    # swap = build_swap_matrix(n_qubits, qubit_indices)
+    # print(swap)
     # hierarchical_quantum_stacking(n_copies, v_col=True, dataset=dataset)
 
     # plot_confusion_matrix('fashion_mnist')
