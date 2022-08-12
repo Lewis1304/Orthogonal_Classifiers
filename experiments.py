@@ -329,25 +329,25 @@ def get_D_final_predictions():
         ortho_mpo_classifier = data_to_QTN(ortho_classifier_data.data).squeeze()
 
         #print('Training predicitions: ')
-        non_ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
-        ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+        #non_ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
+        #ortho_training_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_train)]
 
         #print('Test predicitions: ')
         non_ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ non_ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
         ortho_test_prediction = [np.abs((mps_image.H.squeeze() @ ortho_mpo_classifier.squeeze()).data) for mps_image in tqdm(mps_test)]
 
 
-        non_ortho_training_predictions.append(non_ortho_training_prediction)
-        ortho_training_predictions.append(ortho_training_prediction)
+        #non_ortho_training_predictions.append(non_ortho_training_prediction)
+        #ortho_training_predictions.append(ortho_training_prediction)
         non_ortho_test_predictions.append(non_ortho_test_prediction)
         ortho_test_predictions.append(ortho_test_prediction)
 
-        print('D_total non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
+        #print('D_total non-ortho test acc:', evaluate_classifier_top_k_accuracy(non_ortho_test_prediction, y_test, 1))
         print('D_total ortho test acc:', evaluate_classifier_top_k_accuracy(ortho_test_prediction, y_test, 1))
         #assert()
 
-        np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_training_predictions_compressed", non_ortho_training_predictions)
-        np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_training_predictions_compressed", ortho_training_predictions)
+        #np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_training_predictions_compressed", non_ortho_training_predictions)
+        #np.savez_compressed('Classifiers/fashion_mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_training_predictions_compressed", ortho_training_predictions)
         np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "non_ortho_d_final_vs_test_predictions", non_ortho_test_predictions)
         np.save('Classifiers/mnist_mixed_sum_states/D_total/' + "ortho_d_final_vs_test_predictions", ortho_test_predictions)
 
@@ -598,10 +598,10 @@ def mps_stacking(training_mps_predictions, test_mps_predictions, n_copies, y_tra
 
     #Parameters for batch adding label predictions
     D_batch = 32
-    batch_nums = [4, 8, 13, 13]
+    #batch_nums = [4, 8, 13, 13]
     #batch_nums = [3, 13, 39, 139]
     #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
-    #batch_nums = [10]
+    batch_nums = [10]
 
     #Batch adding copied predictions to create sum states
     print('Batch adding predictions...')
@@ -631,11 +631,8 @@ def mps_stacking(training_mps_predictions, test_mps_predictions, n_copies, y_tra
     #Perform overlaps
     print('Performing overlaps...')
     stacked_predictions = np.array([np.abs((mps_image.H.squeeze() @ stacking_unitary.squeeze()).data) for mps_image in tqdm(test_copied_predictions)])
-
     result = evaluate_classifier_top_k_accuracy(stacked_predictions, y_test, 1)
-    #Compute Accuracy
     print()
-    #print('Test accuracy before:', evaluate_classifier_top_k_accuracy(test_label_qubits, y_test, 1))
     print('Test accuracy U:', result)
     print()
 
@@ -660,14 +657,16 @@ def mps_stacking(training_mps_predictions, test_mps_predictions, n_copies, y_tra
 def tensor_network_stacking_experiment(dataset, max_n_copies):
 
     #Upload Data
-    training_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]#.astype(np.float32)
-    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy')#.astype(np.int8)
+    #training_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle = True)['arr_0'][15]#.astype(np.float32)
+    #y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy')#.astype(np.int8)
+    training_label_qubits = np.load('data/' + dataset + '/new_ortho_d_final_vs_training_predictions.npy')[15].astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy')
     training_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in training_label_qubits])
 
-    training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 5408]) for i in range(10)]))
-    y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 5408]) for i in range(10)]))
-    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 10]) for i in range(10)]))
-    #y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 10]) for i in range(10)]))
+    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 5408]) for i in range(10)]))
+    #y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 5408]) for i in range(10)]))
+    training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 10]) for i in range(10)]))
+    y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 10]) for i in range(10)]))
 
     #outer_ket_states = training_label_qubits
     #for k in range(n_copies):
@@ -675,25 +674,30 @@ def tensor_network_stacking_experiment(dataset, max_n_copies):
 
     #Convert predictions to MPS
     print('Encoding predictions...')
-    D_encode = 32
+    #D_encode = 32
     training_mps_predictions = mps_encoding(training_label_qubits, None)
     #training_mps_predictions = mps_encoding(outer_ket_states, D_encode)
 
-    test_label_qubits = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions.npy')[15]
+    test_label_qubits = np.load('data/' + dataset + '/new_ortho_d_final_vs_test_predictions.npy')[15]
     y_test = np.load('data/' + dataset + '/ortho_d_final_vs_test_predictions_labels.npy')
     test_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in test_label_qubits])
+
+    print('Test accuracy before:', evaluate_classifier_top_k_accuracy(test_label_qubits, y_test, 1))
 
     #test_label_qubits = test_label_qubits[:100]
     #y_test = y_test[:100]
 
     test_mps_predictions = mps_encoding(test_label_qubits, None)
 
-    for i in range(max_n_copies):
+    for i in range(2,max_n_copies):
         result = mps_stacking(training_mps_predictions, test_mps_predictions, i, y_train, y_test)
-        np.save('tensor_network_stacking', result)
+        #np.save('tensor_network_stacking', result)
 
 if __name__ == "__main__":
-    get_D_final_predictions()
+
+    tensor_network_stacking_experiment('mnist',5)
+
+    #get_D_final_predictions()
     #tensor_network_stacking_experiment('mnist', 16)
     assert()
     #obtain_D_encode_preds()
