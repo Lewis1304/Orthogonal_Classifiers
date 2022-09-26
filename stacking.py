@@ -9,6 +9,7 @@ import qutip
 import matplotlib.pyplot as plt
 from experiments import create_experiment_bitstrings
 import tensorflow as tf
+
 np.set_printoptions(precision=4, linewidth=100000, suppress=True, threshold=np.inf)
 
 from tqdm import tqdm
@@ -234,8 +235,10 @@ def delta_efficent_deterministic_quantum_stacking(n_copies, v_col=True, dataset=
 
     print(f'Number of copies to stack this level: {n_copies_this_stack}')
     if stacking_layer_idx == 0:
+        # initial_label_qubits = \
+        #     np.load(f'{dir}/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle=True)['arr_0'][15]
         initial_label_qubits = \
-        np.load(f'{dir}/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle=True)['arr_0'][15]
+            np.load(f'{dir}/new_ortho_d_final_vs_training_predictions.npy', allow_pickle=True)[15]
         y_train = np.load(f'{dir}/ortho_d_final_vs_training_predictions_labels.npy')
         prev_copies_string = 'initial_'
         initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
@@ -342,8 +345,10 @@ def evaluate_stacking_unitary(U, n_copies, partial=False, dataset='fashion_mnist
         Load Training Data
         """
         if stacking_layer_idx == 0:
+            # initial_label_qubits = \
+            #     np.load(f'{dir}/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle=True)['arr_0'][15]
             initial_label_qubits = \
-                np.load(f'{dir}/ortho_d_final_vs_training_predictions_compressed.npz', allow_pickle=True)['arr_0'][15]
+                np.load(f'{dir}/new_ortho_d_final_vs_training_predictions.npy', allow_pickle=True)[15]
             y_train = np.load(f'{dir}/ortho_d_final_vs_training_predictions_labels.npy')
             prev_copies_string = 'initial_'
         else:
@@ -394,7 +399,10 @@ def evaluate_stacking_unitary(U, n_copies, partial=False, dataset='fashion_mnist
         """
 
         print('Performing Partial Trace!')
-        preds_U = np.array([np.diag(partial_trace(i, [0, 1, 2, 3])) for i in tqdm(preds_U)])
+        # preds_U = np.array([np.diag(partial_trace(i, [0, 1, 2, 3])) for i in tqdm(preds_U)])
+        n_qubits = int(np.log2(U.shape[0]))
+        print(n_qubits)
+        preds_U = np.array([np.diag(partial_trace(i, [n_qubits-4, n_qubits-3, n_qubits-2, n_qubits-1])) for i in tqdm(preds_U)])
 
         # Rearrange to 0,1,2,3,.. formation. This is req. for evaluate_classifier
         if partial:
@@ -414,7 +422,7 @@ def evaluate_stacking_unitary(U, n_copies, partial=False, dataset='fashion_mnist
     Load Test Data
     """
     if stacking_layer_idx == 0:
-        initial_label_qubits = np.load(f'{dir}/ortho_d_final_vs_test_predictions.npy', allow_pickle=True)[15]
+        initial_label_qubits = np.load(f'{dir}/new_ortho_d_final_vs_test_predictions.npy', allow_pickle=True)[15]
         y_test = np.load(f'{dir}/ortho_d_final_vs_test_predictions_labels.npy')
         prev_copies_string = 'initial_'
     else:
@@ -462,7 +470,11 @@ def evaluate_stacking_unitary(U, n_copies, partial=False, dataset='fashion_mnist
     Trace out other qubits/copies
     """
     print('Performing Partial Trace!')
-    preds_U = np.array([np.diag(partial_trace(i, [0, 1, 2, 3])) for i in tqdm(preds_U)])
+
+    n_qubits = int(np.log2(U.shape[0]))
+
+    preds_U = np.array([np.diag(partial_trace(i, [n_qubits-4, n_qubits-3, n_qubits-2, n_qubits-1])) for i in tqdm(preds_U)])
+    # preds_U = np.array([np.diag(partial_trace(i, [0, 1, 2, 3])) for i in tqdm(preds_U)])
 
     # Rearrange to 0,1,2,3,.. formation. This is req. for evaluate_classifier
     if partial:
@@ -488,14 +500,12 @@ def hierarchical_quantum_stacking(n_copies_list, v_col=False, dataset='mnist'):
     for stacking_layer_idx, n_copies in enumerate(n_copies_list):
         print(f'Stacking layer {stacking_layer_idx}')
         U = delta_efficent_deterministic_quantum_stacking(n_copies_list, v_col=v_col, dataset=dataset,
-                                                          stacking_layer_idx=stacking_layer_idx)
-        U = get_stacking_unitary(n_copies_list, stacking_layer_idx=stacking_layer_idx, dataset=dataset)
+                                                          stacking_layer_idx=stacking_layer_idx+5)
+        U = get_stacking_unitary(n_copies_list, stacking_layer_idx=stacking_layer_idx+5, dataset=dataset)
         training_predictions, test_predictions = evaluate_stacking_unitary(U, partial=False, dataset=dataset,
                                                                            training=True,
                                                                            n_copies=n_copies_list,
-                                                                           stacking_layer_idx=stacking_layer_idx)
-
-
+                                                                           stacking_layer_idx=stacking_layer_idx+5)
 
 
 def sum_state_deterministic_quantum_stacking(n_copies, v_col=True, dataset='fashion_mnist'):
@@ -542,8 +552,8 @@ def specific_quantum_stacking(n_copies, v_col=False):
     #     'Classifiers/fashion_mnist_mixed_sum_states/D_total/ortho_d_final_vs_training_predictions_labels.npy').astype(
     #     np.float32)
     dataset = 'mnist'
-    initial_label_qubits =  np.load(f'data/{dataset}/ortho_d_final_vs_training_predictions_compressed.npz',
-            allow_pickle=True)['arr_0'][15].astype(np.float32)
+    initial_label_qubits = np.load(f'data/{dataset}/ortho_d_final_vs_training_predictions_compressed.npz',
+                                   allow_pickle=True)['arr_0'][15].astype(np.float32)
     y_train = np.load(
         f'data/{dataset}/ortho_d_final_vs_training_predictions_labels.npy').astype(
         np.float32)
@@ -555,8 +565,11 @@ def specific_quantum_stacking(n_copies, v_col=False):
     Also post-select (slice) such that stacking unitary is constructed only from bitstrings corresponding to labels 5,7,8,9
     Normalisation req. after post-selection
     """
+
     possible_labels = [5, 7, 8, 9, 4, 0, 6, 1, 2, 3]
+
     assignment = possible_labels + list(range(10, 16))
+
     reassigned_preds = np.array([i[assignment][:4] for i in initial_label_qubits])
     initial_label_qubits = reassigned_preds
     initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
@@ -793,6 +806,7 @@ def plot_confusion_matrix(dataset='fashion_mnist'):
     # plt.savefig(dataaset + '_stacking_confusion_matrix_results.pdf')
     plt.show()
 
+
 # def test(n_copies, v_col = True, dataset = 'fashion_mnist'):
 #     from numpy import linalg as LA
 #     print('Dataset: ', dataset)
@@ -861,16 +875,18 @@ if __name__ == '__main__':
     # U = test(1, dataset = 'fashion_mnist')
     # classical_stacking()
     # assert()
-    dataset = 'mnist'
-    # n_copies_list = [1,1,1,1,1,1,1,1,1,1,1]
-    # hierarchical_quantum_stacking(n_copies_list, v_col=True, dataset=dataset)
+    dataset = 'fashion_mnist'
+    # n_copies_list = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    n_copies_list = [2, 2, 2, 2, 2, 2, 2, 2, 2, 2,2 , 2]
+
+    hierarchical_quantum_stacking(n_copies_list, v_col=True, dataset=dataset)
 
     # plot_confusion_matrix('fashion_mnist')
     # results = []
-    for i in range(1,2):
-       print('NUMBER OF COPIES: ',i)
-       U = specific_quantum_stacking(i, True)
-       _, test_predictions = evaluate_stacking_unitary(U, training=False)
+    # for i in range(1,2):
+    #    print('NUMBER OF COPIES: ',i)
+    #    U = specific_quantum_stacking(i, True)
+    #    _, test_predictions = evaluate_stacking_unitary(U, training=False)
     #    results.append([training_predictions, test_predictions])
     #    #np.save('partial_stacking_results_2', results)
     # stacking_on_confusion_matrix(0, dataset = 'mnist')
