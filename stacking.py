@@ -1112,44 +1112,53 @@ def mpo_stacking(dataset):
     stacked_training = np.array([abs(np.diag(i)) for i in stacked_copied_rhos])
     print('Stacked training acc:', evaluate_classifier_top_k_accuracy(stacked_training, reduced_y_train, 1))
 
-def update_V(initial_V, n_steps, dataset = 'mnist'):
+def update_V(initial_V, n_steps, dataset = 'mnist', stacking_type = 'square_root_columns'):
 
     initial_label_qubits = np.load('data/' + dataset + '/new_ortho_d_final_vs_training_predictions.npy')[15].astype(np.float32)
     y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
 
-    #evaluate_stacking_unitary(initial_V, dataset = 'mnist', training = False)
+    evaluate_stacking_unitary(initial_V, dataset = dataset, training = False)
 
     initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
     possible_labels = list(set(y_train))
     n_copies = int(np.log2(initial_V.shape[0])/4)-1
-    pI = np.eye(int(initial_V.shape[0]/16))
-
+    pI = np.eye(initial_V.shape[0]//16)
 
     alpha_results1 = []
     alpha_results2 = []
-    #alpha_results3 = []
+    alpha_results3 = []
+
     #Update Step
-    for alpha in np.logspace(-4,-1,num=4):
+    #for alpha in np.logspace(-4,-1,num=4):
     #for alpha in [1, 0.001, 0.0001]:
-    #for alpha in [0.0001]:
+    for alpha in [0.0001]:
         V1 = initial_V
         V2 = initial_V
-        #V3 = initial_V
+        V3 = initial_V
 
         results1 = []
         results2 = []
-        #results3 = []
+        results3 = []
+
+        c1_results = []
+        c2_results = []
+        c3_results = []
 
         for n in tqdm(range(n_steps)):
 
             dV1 = np.zeros((initial_V.shape[0], initial_V.shape[0]),dtype = np.complex128)
             dV2 = np.zeros((initial_V.shape[0], initial_V.shape[0]),dtype = np.complex128)
-            #dV3 = np.zeros((initial_V.shape[0], initial_V.shape[0]),dtype = np.complex128)
+            dV3 = np.zeros((initial_V.shape[0], initial_V.shape[0]),dtype = np.complex128)
 
+            C1 = 0
+            C2 = 0
+            C3 = 0
+            C = lambda V: np.trace((weighted_outer_states - V.conj().T @ np.kron(pI, pL) @ V)**2)
             for l in possible_labels:
                 weighted_outer_states = np.zeros((initial_V.shape[0], initial_V.shape[0]))
                 pL = np.outer(np.eye(16)[int(l)], np.eye(16)[int(l)])
 
+                #Construct weighted sum (rho_l^m)
                 for i in initial_label_qubits[y_train == l]:
                     ket = i
 
@@ -1159,71 +1168,110 @@ def update_V(initial_V, n_steps, dataset = 'mnist'):
                     outer = np.outer(ket.conj(), ket)
                     weighted_outer_states += outer
 
-                dV1 += np.kron(pL, pI) @ V1 @ weighted_outer_states
-                dV2 += np.kron(pL, pI) @ V2 @ weighted_outer_states
-                #dV3 += np.kron(pI, pL) @ V3 @ weighted_outer_states
+                s1, s2 = V1.shape
 
-            V1 = polar(V1 + alpha*polar(dV1.conj().T)[0])[0]
-            V2 = polar(V2 + alpha*dV2.conj().T)[0]
-            #V3 = polar(dV3.conj().T)[0]
+                weighted_outer_states /= np.trace(weighted_outer_states)
+                weighted_outer_states *= (n_copies - 1) * 16
 
-            _, test_results1 = evaluate_stacking_unitary(V1, dataset = 'mnist', training = False)
-            _, test_results2 = evaluate_stacking_unitary(V2, dataset = 'mnist', training = False)
-            #_, test_results3 = evaluate_stacking_unitary(V3, dataset = 'mnist', training = False)
+                #C_norm = lambda V: np.trace(V.conj().T @ np.kron(pI, pL) @ V) # is 16
+                #C = lambda V: np.trace((weighted_outer_states - V.conj().T @ np.kron(pI, pL) @ V)**2)
 
-            results1.append(test_results1)
-            results2.append(test_results2)
+                #a += C(V1)
+                #b += C(np.eye(s1))
+
+                #a += np.trace(V1.conj().T @ np.kron(pI, pL) @ V1 @ weighted_outer_states)
+                #b += np.trace(np.eye(s1) @ np.kron(pI, pL) @ np.eye(s1) @ weighted_outer_states)
+
+                dV1 += np.kron(pI, pL) @ V1 @ weighted_outer_states
+                dV2 += np.kron(pI, pL) @ V2 @ weighted_outer_states
+                dV3 += np.kron(pI, pL) @ V3 @ weighted_outer_states
+
+                C1 += C(V1)
+                C2 += C(V2)
+                C3 += C(V3)
+
+
+            V1 = polar(V1 - alpha*polar(dV1.conj().T)[0])[0]
+            #V1 = polar(V1 + alpha*polar(dV1)[0])[0]
+            V2 = polar(V2 - alpha*dV2.conj().T)[0]
+            #V2 = polar(V2 + alpha*dV2)[0]
+            V3 = -polar(dV3.conj().T)[0]
+            #V3 = polar(dV3)[0]
+
+            #_, test_results1 = evaluate_stacking_unitary(V1, dataset = dataset, training = False)
+            #_, test_results2 = evaluate_stacking_unitary(V2, dataset = dataset, training = False)
+            #_, test_results3 = evaluate_stacking_unitary(V3, dataset = dataset, training = False)
+
+            #results1.append(test_results1)
+            #results2.append(test_results2)
             #results3.append(test_results3)
 
-        alpha_results1.append(results1)
-        alpha_results2.append(results2)
+            c1_results.append(C1)
+            c2_results.append(C2)
+            c3_results.append(C3)
+
+        #alpha_results1.append(results1)
+        #alpha_results2.append(results2)
         #alpha_results3.append(results3)
 
-        np.save(f'update_V_results/rearranged_gradient_update_results_1_n_copies_{n_copies}', alpha_results1)
-        np.save(f'update_V_results/rearranged_gradient_update_results_2_n_copies_{n_copies}', alpha_results2)
-        #np.save(f'update_V_results/gradient_update_results_3_n_copies_{n_copies}', alpha_results3)
+        #np.save(f'update_V_results/{dataset}/normalised_pi_pl_{stacking_type}_gradient_update_results_1_n_copies_{n_copies}', alpha_results1)
+        #np.save(f'update_V_results/{dataset}/normalised_pi_pl_{stacking_type}_gradient_update_results_2_n_copies_{n_copies}', alpha_results2)
+        #np.save(f'update_V_results/{dataset}/normalised_pi_pl_{stacking_type}_gradient_update_results_3_n_copies_{n_copies}', alpha_results3)
+
+        np.save('c1_results', c1_results)
+        np.save('c2_results', c2_results)
+        np.save('c3_results', c3_results)
 
 def update_mpo_V(initial_mpo_V, n_steps, dataset = 'mnist'):
     pass
 
-def plot_update_V():
+def plot_update_V(dataset):
 
-    V1_results = np.load('update_V_results/gradient_update_results_1_n_copies_1.npy')
-    V2_results = np.load('update_V_results/gradient_update_results_2_n_copies_1.npy')
-    V3_results = np.load('update_V_results/gradient_update_results_3_n_copies_1.npy')
+    V1_results = np.load(f'update_V_results/{dataset}/gradient_update_results_1_n_copies_1.npy')
+    V2_results = np.load(f'update_V_results/{dataset}/gradient_update_results_2_n_copies_1.npy')
+    V3_results = np.load(f'update_V_results/{dataset}/gradient_update_results_3_n_copies_1.npy')
 
-    two_copy1 = np.load('update_V_results/gradient_update_results_1_n_copies_2.npy')
-    two_copy2 = np.load('update_V_results/gradient_update_results_2_n_copies_2.npy')
+    #two_copy1 = np.load('update_V_results/gradient_update_results_1_n_copies_2.npy')
+    #two_copy2 = np.load('update_V_results/gradient_update_results_2_n_copies_2.npy')
 
     V1_results_max = [max(i) for i in V1_results]
     V2_results_max = [max(i) for i in V2_results]
     V3_results_max = [max(i) for i in V3_results]
-    two_copy_1_results_max = [max(i) for i in two_copy1]
-    two_copy_2_results_max = [max(i) for i in two_copy2]
-
+    #two_copy_1_results_max = [max(i) for i in two_copy1]
+    #two_copy_2_results_max = [max(i) for i in two_copy2]
 
     best_V1_results = V1_results[np.argmax(V1_results_max)]
     best_V2_results = V2_results[np.argmax(V2_results_max)]
     best_V3_results = V3_results[np.argmax(V3_results_max)]
-    best_two_copy_1_results = two_copy1[np.argmax(two_copy_1_results_max)]
-    best_two_copy_2_results = two_copy2[np.argmax(two_copy_2_results_max)]
-
+    #best_two_copy_1_results = two_copy1[np.argmax(two_copy_1_results_max)]
+    #best_two_copy_2_results = two_copy2[np.argmax(two_copy_2_results_max)]
 
     x = range(1,11)
-    alphas = np.logspace(-4,1,num=6)
+    #alphas = np.logspace(-4,1,num=6)
 
-    fig, (ax1, ax2) = plt.subplots(2, 1)
-    #fig, ax1 = plt.subplots(1, 1)
+    #fig, (ax1, ax2) = plt.subplots(2, 1)
+    fig, ax1 = plt.subplots(1, 1)
 
+    #ax1.plot(x,best_V1_results, label = fr'$V = Polar(V + \alpha * Polar[dV]) \ ,\alpha:{np.round(alphas[np.argmax(V1_results_max)],5)}$')
+    ax1.plot(x,best_V1_results, label = fr'$V = Polar(V + \alpha * Polar[dV])$')
+    #ax1.plot(x,best_V2_results,linestyle = 'dashed', label = fr'$V = Polar(V + \alpha * dV) \ ,\alpha:{np.round(alphas[np.argmax(V2_results_max)],5)}$')
+    ax1.plot(x,best_V2_results,linestyle = 'dashed', label = fr'$V = Polar(V + \alpha * dV)$')
+    #ax1.plot(x,best_V3_results,linestyle = 'dotted', label = '$V = Polar(dV)$')
+    ax1.plot(x,best_V3_results,linestyle = 'dotted', label = '$V = Polar(dV)$')
 
-    ax1.plot(x,best_V1_results, label = fr'$V = Polar(V + \alpha * Polar[dV]) \ ,\alpha:{np.round(alphas[np.argmax(V1_results_max)],5)}$')
-    ax1.plot(x,best_V2_results,linestyle = 'dashed', label = fr'$V = Polar(V + \alpha * dV) \ ,\alpha:{np.round(alphas[np.argmax(V2_results_max)],5)}$')
-    ax1.plot(x,best_V3_results,linestyle = 'dotted', label = fr'$V = Polar(dV) \ ,\alpha:{np.round(alphas[np.argmax(V3_results_max)],5)}$')
-    ax1.axhline(0.8565,c = 'k', alpha = 0.4, label = 'Full Stacking 2 Copy Result')
+    ax1.axhline(0.8033,c = 'r', alpha = 0.4, label = 'Initial result')
+    ax1.axhline(0.8565,c = 'purple', alpha = 0.4, label = 'Full Stacking 2 Copy Result')
     ax1.set_xlabel('Iteration')
     ax1.set_ylabel('Test Accuracy')
-    ax1.set_title('2 Copy Case. Best result plotted from '+ r'$\alpha = [0.0001,10]$')
+    #ax1.set_title('2 Copy Case. Best result plotted from '+ r'$\alpha = [0.0001,10]$')
+    ax1.set_title('2 Copy Case')
     ax1.legend()
+    #plt.savefig('dV_update.pdf')
+    ax1.set_xlim([1,10])
+
+    plt.show()
+
+    assert()
 
     alphas = np.logspace(-4,0,num=5)
     x = range(1,6)
@@ -1241,8 +1289,6 @@ def plot_update_V():
 
 
     assert()
-
-
 
 def mps_stacking(training_mps_predictions, test_mps_predictions, n_copies, bond_order, y_train, y_test):
 
@@ -1320,10 +1366,10 @@ def tensor_network_stacking_experiment(dataset, max_n_copies, bond_order):
     y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy')
     training_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in training_label_qubits])
 
-    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 5408]) for i in range(10)]))
-    #y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 5408]) for i in range(10)]))
     training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 10]) for i in range(10)]))
     y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 10]) for i in range(10)]))
+    #training_label_qubits = np.array(reduce(list.__add__, [list(training_label_qubits[i*5421 : i * 5421 + 10]) for i in range(10)]))
+    #y_train = np.array(reduce(list.__add__, [list(y_train[i*5421 : i * 5421 + 10]) for i in range(10)]))
 
     #Convert predictions to MPS
     print('Encoding predictions...')
@@ -1337,29 +1383,341 @@ def tensor_network_stacking_experiment(dataset, max_n_copies, bond_order):
 
 
     test_mps_predictions = mps_encoding(test_label_qubits, None)
+    results = []
     for i in range(max_n_copies):
         result = mps_stacking(training_mps_predictions, test_mps_predictions, i, bond_order, y_train, y_test)
-        np.save(f'tensor_network_stacking_results/max_copies_{max_n_copies}_D_{bond_order}', result)
+        results.append(result)
+        #np.save(f'new_tensor_network_stacking_results/max_copies_{max_n_copies}_D_{bond_order}', results)
+
+def spectra(n_copies, v_col = True, dataset = 'fashion_mnist'):
+    from numpy import linalg as LA
+    print('Dataset: ', dataset)
+
+    initial_label_qubits = np.load('data/' + dataset + '/new_ortho_d_final_vs_training_predictions.npy')[15].astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+    possible_labels = list(set(y_train))
+
+    dim_l = initial_label_qubits.shape[1]
+    outer_ket_states = initial_label_qubits
+
+    Scofs = []
+    for n_copies in range(2):
+        dim_lc = dim_l ** (1 + n_copies)
+
+        for l in tqdm(possible_labels):
+            weighted_outer_states = np.zeros((dim_lc, dim_lc))
+            for i in tqdm(initial_label_qubits[y_train == l]):
+                ket = i
+
+                for k in range(n_copies):
+                    ket = np.kron(ket, i)
+
+                outer = np.outer(ket.conj(), ket)
+                weighted_outer_states += outer
+
+            #print('Performing SVD!')
+            U, S, V = svd(weighted_outer_states)
+
+            #a = weighted_outer_states
+            #b = np.sum([s * np.outer(u, u) for u,s in zip(V,S)], axis = 0)
+            #c = U[:,:10] @ np.diag(S)[:10,:10]
+
+            print(U[0,:] @ U[0,:])
+            print(U[0,:] @ U[1,:])
+
+            assert()
 
 
+    plt.savefig('spectra.pdf')
+    plt.show()
+    assert()
+
+def different_stacking(n_copies, dataset = 'fashion_mnist', stacking_type = "square_root_columns"):
+    from numpy import linalg as LA
+    print('Dataset: ', dataset)
+    print('Stacking type:', stacking_type)
+
+    initial_label_qubits = np.load('data/' + dataset + '/new_ortho_d_final_vs_training_predictions.npy')[15].astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+    possible_labels = list(set(y_train))
+
+    dim_l = initial_label_qubits.shape[1]
+    outer_ket_states = initial_label_qubits
+
+    dim_lc = dim_l ** (1 + n_copies)
+
+    V = []
+    for l in tqdm(possible_labels):
+        weighted_outer_states = np.zeros((dim_lc, dim_lc))
+        for i in tqdm(initial_label_qubits[y_train == l]):
+            ket = i
+
+            for k in range(n_copies):
+                ket = np.kron(ket, i)
+
+            outer = np.outer(ket.conj(), ket)
+            weighted_outer_states += outer
+
+        #print('Performing SVD!')
+        U, S = svd(weighted_outer_states)[:2]
+
+        a, b = U.shape
+        if stacking_type == "square_root_columns":
+            Vl = np.array(U[:, :b//16] @ np.sqrt(np.diag(S)[:b//16, :b//16]))
+        elif stacking_type == "square_root_rows":
+            Vl = np.array(U.T[:, :b//16] @ np.sqrt(np.diag(S)[:b//16, :b//16]))
+
+        elif stacking_type == "not_square_root_columns":
+            Vl = np.array(U[:, :b//16] @ np.diag(S)[:b//16, :b//16])
+        elif stacking_type == "not_square_root_rows":
+            Vl = np.array(U.T[:, :b//16] @ np.diag(S)[:b//16, :b//16])
+
+        elif stacking_type == "none_columns":
+            Vl = np.array(U[:, :b//16])
+        elif stacking_type == "none_rows":
+            Vl = np.array(U.T[:, :b//16])
+
+
+        V.append(Vl)
+
+    V = np.array(V)
+    c, d, e = V.shape
+    V = np.pad(V, ((0,dim_l - c), (0,0), (0,0))).transpose(0, 2, 1).reshape(dim_l*e, d)
+
+    print('Performing Polar Decomposition!')
+    U = polar(V)[0]
+    print('Finished Computing Stacking Unitary!')
+    return U.astype(np.float32)
+
+def plot_different_stacking(n_copies,dataset):
+
+    #stacking_types = ["square_root_columns", "square_root_rows", "not_square_root_columns", "not_square_root_rows", "none_columns", "none_rows"]
+    #stacking_types = ["square_root_rows", "not_square_root_rows", "none_columns", "none_rows"]
+    stacking_types = ["not_square_root_rows", "none_columns"]
+    #stacking_types_accuracies = [0.8565,0.1488,0.8406,0.1581,0.8763,0.1339]
+    #stacking_types_accuracies = [0.1488,0.1581,0.8763,0.1339]
+    stacking_types_accuracies = [0.1488,0.8763]
+
+    i = 0
+    fig, axes = plt.subplots(2,3)
+    for row in axes:
+        for ax in row:
+            if i > 1:
+                break
+            stacking_type = stacking_types[i]
+
+            V1_results = np.load(f'update_V_results/{dataset}/mega_extended_pi_pl/extended_pi_pl_{stacking_type}_gradient_update_results_1_n_copies_{n_copies}.npy')[0]
+            V2_results = np.load(f'update_V_results/{dataset}/mega_extended_pi_pl/extended_pi_pl_{stacking_type}_gradient_update_results_2_n_copies_{n_copies}.npy')[0]
+            V3_results = np.load(f'update_V_results/{dataset}/mega_extended_pi_pl/extended_pi_pl_{stacking_type}_gradient_update_results_3_n_copies_{n_copies}.npy')[0]
+
+            x = range(1,len(V1_results)+1)
+            ax.plot(x, V1_results,label = fr'$V = Polar(V + \alpha * Polar[dV])$')
+            ax.plot(x, V2_results,linestyle = 'dashed', label = fr'$V = Polar(V + \alpha * dV)$')
+            ax.plot(x, V3_results,linestyle = 'dotted', label = '$V = Polar(dV)$')
+
+            ax.axhline(0.8033,c = 'r', alpha = 0.4, label = 'Initial result')
+            ax.axhline(stacking_types_accuracies[i],c = 'purple', alpha = 0.4, label = 'Full Stacking 2 Copy Result')
+            #ax.set_xlabel('Iteration')
+            #ax.set_ylabel('Test Accuracy')
+            ax.set_title(f'{stacking_type}')
+            #plt.savefig('dV_update.pdf')
+            #ax.set_xlim([1,30])
+            i += 1
+    #ax.legend(loc = (1.5,0.1))
+    plt.suptitle(f'{dataset} extended pi_pl DMRG update')
+    plt.tight_layout()
+    plt.savefig(f'{dataset}_mega_extended_pi_pl_DMRG_update.pdf')
+    plt.show()
+
+def plot_best_stacking(n_copies,dataset):
+
+    #stacking_types = ["square_root_columns", "square_root_rows", "not_square_root_columns", "not_square_root_rows", "none_columns", "none_rows"]
+    #stacking_types = ["square_root_rows", "not_square_root_rows", "none_columns", "none_rows"]
+    stacking_types = ["none_columns"]
+    #stacking_types_accuracies = [0.8565,0.1488,0.8406,0.1581,0.8763,0.1339]
+    #stacking_types_accuracies = [0.1488,0.1581,0.8763,0.1339]
+    stacking_types_accuracies = [0.8763]
+
+    i = 0
+    fig, ax = plt.subplots(1,1)
+
+    stacking_type = stacking_types[i]
+    stacking_accuracy = stacking_types_accuracies[i]
+
+    V1_results = np.load(f'update_V_results/{dataset}/normalised_pi_pl_{stacking_type}_gradient_update_results_1_n_copies_{n_copies}.npy')[0]
+    V2_results = np.load(f'update_V_results/{dataset}/normalised_pi_pl_{stacking_type}_gradient_update_results_2_n_copies_{n_copies}.npy')[0]
+    V3_results = np.load(f'update_V_results/{dataset}/normalised_pi_pl_{stacking_type}_gradient_update_results_3_n_copies_{n_copies}.npy')[0]
+
+    x = range(1,len(V1_results)+1)
+    ax.plot(x, V1_results,label = r'$V_{i+1} = Polar(V_i + \alpha * Polar[dC/dV_i])$')
+    ax.plot(x, V2_results,linestyle = 'dashed', label = r'$V_{i+1} = Polar(V_i + \alpha * dC/dV_i)$')
+    ax.plot(x, V3_results,linestyle = 'dotted', label = r'$V_{i+1} = Polar(dC/dV_i)$')
+
+    ax.axhline(0.8033,c = 'r', alpha = 0.4, label = 'Initial result')
+    ax.axhline(stacking_accuracy,c = 'purple', alpha = 0.4, label = 'Full Stacking 2 Copy Result')
+    #ax.set_xlabel('Iteration')
+    #ax.set_ylabel('Test Accuracy')
+    #ax.set_title(f'{stacking_type}')
+    #plt.savefig('dV_update.pdf')
+    #ax.set_xlim([1,30])
+    ax.legend()
+
+    ax.set_title(f'{dataset} DMRG update')
+    plt.tight_layout()
+    #plt.savefig(f'{dataset}_DMRG_update.pdf')
+    plt.show()
+
+def explore_cost_function_landscape(initial_V, max_steps, dataset):
+    #np.random.seed(42)
+
+    initial_label_qubits = np.load('data/' + dataset + '/new_ortho_d_final_vs_training_predictions.npy')[15].astype(np.float32)
+    y_train = np.load('data/' + dataset + '/ortho_d_final_vs_training_predictions_labels.npy').astype(np.float32)
+    initial_label_qubits = np.array([i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits])
+
+    #evaluate_stacking_unitary(initial_V, dataset = dataset, training = False)
+
+    possible_labels = list(set(y_train))
+    n_copies = int(np.log2(initial_V.shape[0])/4)-1
+    pI = np.eye(initial_V.shape[0]//16)
+
+    weighted_outer_states = []
+    pLs = []
+    for l in possible_labels:
+        weighted_outer_state = np.zeros((initial_V.shape[0], initial_V.shape[0]))
+        pL = np.outer(np.eye(16)[int(l)], np.eye(16)[int(l)])
+
+        #Construct weighted sum (rho_l^m)
+        for i in initial_label_qubits[y_train == l]:
+            ket = i
+
+            for k in range(n_copies):
+                ket = np.kron(ket, i)
+
+            outer = np.outer(ket.conj(), ket)
+            weighted_outer_state += outer
+
+
+        weighted_outer_state /= np.trace(weighted_outer_state)
+        weighted_outer_state *= (n_copies - 1) * 16
+
+        weighted_outer_states.append(weighted_outer_state)
+        pLs.append(pL)
+
+    C = lambda V: np.sum([np.trace((weighted_outer_state - V.conj().T @ np.kron(pI, pL) @ V)**2) for weighted_outer_state,pL in zip(weighted_outer_states, pLs)])
+
+    def C_test(V):
+        results = []
+        for weighted_outer_state,pL in zip(weighted_outer_states, pLs):
+            a = weighted_outer_state @ weighted_outer_state
+            b = weighted_outer_state @ V.conj().T @ np.kron(pI, pL) @ V
+            c = b.conj().T
+            d = (V.conj().T @ np.kron(pI, pL) @ V) @ (V.conj().T @ np.kron(pI, pL) @ V).conj().T
+            results.append(np.trace(a - b - c + d))
+        return np.sum(results)
+
+    R = np.random.randn(*initial_V.shape)
+
+    V1 = initial_V
+    V2 = initial_V
+    V3 = initial_V
+
+    C1 = C_test(V1)
+    C2 = C_test(V2)
+    C3 = C_test(V3)
+
+    C1s = []
+    C2s = []
+    C3s = []
+
+    alpha = 100
+    for _ in tqdm(range(max_steps)):
+    #for _ in range(max_steps):
+
+        delta = np.random.randn(*V1.shape)
+
+        #V1_new = polar(V1 + alpha*polar(delta)[0])[0]
+        #V2_new = polar(V2 + alpha*delta)[0]
+        #V3_new = polar(delta)[0]
+
+        C1_new = C_test(V1 + delta)
+        #C2_new = C_test(V2_new)
+        #C3_new = C_test(V3_new)
+
+        #print(C1)
+        #print(C2_new)
+        #print(C3_new)
+        #print()
+
+        if C1_new < C1:
+            C1 = C1_new
+            print(C1)
+            print()
+        #if C2_new < C2:
+        #    C2 = C2_new
+        #if C3_new < C3:
+        #    C3 = C3_new
+
+        C1s.append(C1)
+        #C2s.append(C2)
+        #C3s.append(C3)
+
+    np.save('C1s', C1s)
+    #np.save('C2s', C2s)
+    #np.save('C3s', C3s)
+
+    plt.plot(C1s)
+    #plt.plot(C2s, linestyle = '--')
+    #plt.plot(C3s)
+
+    plt.show()
 
 
 if __name__ == '__main__':
+    """
+    c1 = np.load('c1_results.npy')
+    c2 = np.load('c2_results.npy')
+    c3 = np.load('c3_results.npy')
 
-    tensor_network_stacking_experiment('mnist',10, 32)
+    plt.plot(c1)
+    plt.plot(c2, linestyle = "--")
+    plt.plot(c3)
+    #plt.ylim([0,161])
+    plt.show()
     assert()
+    """
 
-
-
-
+    #spectra(1,True,"mnist")
+    #plot_update_V('mnist')
     n_copies = 1
-    #plot_update_V()
-    initial_V = delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, dataset = 'mnist')
-    #initial_V = polar(np.random.randn(16**n_copies,16**n_copies) + 1.0j*np.random.randn(16**n_copies,16**n_copies))[0]
-    update_V(initial_V, 10)
+    #plot_best_stacking(n_copies,'mnist')
+    #assert()
+    #plot_different_stacking(n_copies,'mnist')
+    #assert()
+    initial_V = different_stacking(n_copies, dataset = 'mnist', stacking_type = "none_columns")
+    explore_cost_function_landscape(initial_V,10000,'mnist')
+
+    #update_V(initial_V, 50, 'mnist', stacking_type = "none_columns")
     assert()
 
-    evaluate_stacking_unitary(initial_V, dataset = 'mnist', training = False)
+    #plot_update_V()
+    #initial_V = delta_efficent_deterministic_quantum_stacking(n_copies, v_col = True, dataset = 'mnist')
+    #for s in ["square_root_columns", "square_root_rows", "not_square_root_columns", "not_square_root_rows", "none_columns", "none_rows"]:
+    for s in ["not_square_root_rows", "none_columns"]:
+        initial_V = different_stacking(n_copies, dataset = 'mnist', stacking_type = s)
+        update_(initial_V, 500, 'mnist', stacking_type = s)
+        assert()
+        update_V(initial_V, 500, 'mnist', stacking_type = s)
+        #plot_update_V('mnist')
+        #evaluate_stacking_unitary(initial_V, dataset = 'mnist', training = False)
+    assert()
+    #initial_V = polar(np.random.randn(16**n_copies,16**n_copies) + 1.0j*np.random.randn(16**n_copies,16**n_copies))[0]
+    #update_V(initial_V, 50)
+    #assert()
+
     #mpo_stacking('mnist')
     #classical_stacking('fashion_mnist')
     assert()

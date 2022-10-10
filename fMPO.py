@@ -438,6 +438,8 @@ class fMPO:
 
         if orthogonalise:
             d, s, i, j = self.data[centre_site].shape
+            print(np.array(self.data[centre_site], dtype = np.float32))
+            print()
             U, P = polar(self.data[centre_site].transpose(0, 2, 1, 3).reshape(d, i * s * j))
             self.data[centre_site] = (U
                 .reshape(d, i, s, j)

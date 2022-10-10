@@ -601,6 +601,8 @@ def mps_stacking(training_mps_predictions, test_mps_predictions, n_copies, y_tra
     #batch_nums = [4, 8, 13, 13]
     #batch_nums = [3, 13, 39, 139]
     #batch_nums = [2, 3, 5, 2, 5, 2, 5, 2, 10]
+    #batch_nums = [2, 2, 2, 2, 3, 5, 5, 5]
+
     batch_nums = [10]
 
     #Batch adding copied predictions to create sum states
