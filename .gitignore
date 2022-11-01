@@ -9,3 +9,4 @@ logs/
 testing/Classifiers/
 env/
 .python-version
+data/
