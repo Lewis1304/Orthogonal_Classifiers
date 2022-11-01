@@ -1,4 +1,5 @@
-from svd_robust import svd
+#from svd_robust import svd
+from numpy.linalg import svd
 from scipy.linalg import polar
 import numpy as np
 import qutip
@@ -44,7 +45,8 @@ def partial_trace(rho, qubit_2_keep):
         return np.outer(rho, rho.conj())
     else:
         rho = qutip.Qobj(rho, dims=[[2] * num_qubit, [1]])
-        return rho.ptrace(qubit_2_keep)
+        ptrace = rho.ptrace(qubit_2_keep)
+        return ptrace
 
 
 """
@@ -66,15 +68,27 @@ def evaluate_stacking_unitary(U, dataset="fashion_mnist", verbose=1):
     """
     Load Test Data
     """
+#    initial_label_qubits = np.load(
+#        "data/" + dataset + "/new_ortho_d_final_vs_test_predictions.npy"
+#    )[15]
+#    y_test = np.load(
+#        "data/" + dataset + "/ortho_d_final_vs_test_predictions_labels.npy"
+#    )
     initial_label_qubits = np.load(
-        "data/" + dataset + "/new_ortho_d_final_vs_test_predictions.npy"
+        "data/" + dataset + "/new_ortho_d_final_vs_training_predictions.npy"
     )[15]
     y_test = np.load(
-        "data/" + dataset + "/ortho_d_final_vs_test_predictions_labels.npy"
+        "data/" + dataset + "/ortho_d_final_vs_training_predictions_labels.npy"
     )
+
     initial_label_qubits = np.array(
         [i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits]
     )
+
+    dim = initial_label_qubits[0].shape[0]
+
+    for i in initial_label_qubits:
+        assert np.allclose(np.linalg.norm(i), 1.0), "States not normalised"
 
     """
     Create copy states
@@ -86,11 +100,15 @@ def evaluate_stacking_unitary(U, dataset="fashion_mnist", verbose=1):
             np.kron(i, j) for i, j in zip(outer_ket_states, initial_label_qubits)
         ]
 
+    assert outer_ket_states[0].shape == (dim**(n_copies + 1),), "Wrong size"
+
     """
     Perform Overlaps
     """
     print("Performing Overlaps!")
-    preds_U = np.array([abs(U.dot(i)) for i in verb(outer_ket_states)])
+#    preds_U = np.array([abs(U.dot(i)) for i in verb(outer_ket_states)])
+    preds_U = np.array([U @ i for i in verb(outer_ket_states)])
+
 
     """
     Trace out other qubits/copies
@@ -503,6 +521,7 @@ def stochastic_update(initial_V, n_steps, experiment_name, dataset="mnist", verb
 
         # Keep V_new iff C_new is less than C_old
         if C_new <= C_old:
+            tqdm.write(f"Updated V at step {i}")
             V_old = V_new
             C_old = C_new
             # c_ll_old = c_ll_new
@@ -624,6 +643,9 @@ if __name__ == "__main__":
     experiment_name = "new_cost_func_mean"
     # plot_update(experiment_name, dataset)
 
-    initial_V = initialise_V(n_copies, dataset)
+#    initial_V = initialise_V(n_copies, dataset)
+#    np.save("initialV_011122", initial_V)
+    initial_V = np.load("initialV_011122.npy")
+    print("Loaded saved initial_V")
     # DMRG_update(initial_V, 1000, experiment_name, dataset)
-    stochastic_update(initial_V, 1e06, experiment_name, dataset)
+    stochastic_update(initial_V, 1e02, experiment_name, dataset)
