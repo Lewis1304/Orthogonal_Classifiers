@@ -7,3 +7,4 @@ models/
 logs/
 .pytest_cache/
 testing/Classifiers/
+env/
