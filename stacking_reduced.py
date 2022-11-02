@@ -68,18 +68,18 @@ def evaluate_stacking_unitary(U, dataset="fashion_mnist", verbose=1):
     """
     Load Test Data
     """
-#    initial_label_qubits = np.load(
-#        "data/" + dataset + "/new_ortho_d_final_vs_test_predictions.npy"
-#    )[15]
-#    y_test = np.load(
-#        "data/" + dataset + "/ortho_d_final_vs_test_predictions_labels.npy"
-#    )
     initial_label_qubits = np.load(
-        "data/" + dataset + "/new_ortho_d_final_vs_training_predictions.npy"
+        "data/" + dataset + "/new_ortho_d_final_vs_test_predictions.npy"
     )[15]
     y_test = np.load(
-        "data/" + dataset + "/ortho_d_final_vs_training_predictions_labels.npy"
+        "data/" + dataset + "/ortho_d_final_vs_test_predictions_labels.npy"
     )
+#    initial_label_qubits = np.load(
+#        "data/" + dataset + "/new_ortho_d_final_vs_training_predictions.npy"
+#    )[15]
+#    y_test = np.load(
+#        "data/" + dataset + "/ortho_d_final_vs_training_predictions_labels.npy"
+#    )
 
     initial_label_qubits = np.array(
         [i / np.sqrt(i.conj().T @ i) for i in initial_label_qubits]
@@ -455,34 +455,57 @@ def stochastic_update(initial_V, n_steps, experiment_name, dataset="mnist", verb
         C = [[np.trace(abs(V.conj().T @ np.kron(pLs[q], pI) @ V @ weighted_outer_states[l])) for q in possible_labels if q != l] for l in possible_labels]
         return np.mean(C)
     """
-    kets = []
-    for k in initial_label_qubits:
-        ket = k
-        for n in range(n_copies):
-            ket = np.kron(ket, k)
-        kets.append(ket)
+#    kets = []
+#    for k in initial_label_qubits:
+#        ket = k
+#        for n in range(n_copies):
+#            ket = np.kron(ket, k)
+#        kets.append(ket)
+    kets = initial_label_qubits
+    for _ in range(n_copies):
+        kets = [
+                np.kron(i, j) for i, j in zip(kets, initial_label_qubits)
+                ]
 
     one_hot_labels = np.eye(16)
+    one_hot_labels_exp = one_hot_labels[y_train]
 
-    def C(V):
-        return np.mean(
-            [
-                np.linalg.norm(
-                    np.diag(partial_trace(V @ ket, [0, 1, 2, 3]))
-                    - one_hot_labels[label]
-                )
-                ** 2
-                for ket, label in zip(kets, y_train)
-            ]
-        )
+    def C_cross(V):
+        V_preds = np.array([np.diag(partial_trace(V @ i, [0, 1, 2, 3])) for i in tqdm(kets, leave=False)])
+        cross_entr = -1*np.log([V_preds[i][int(y_train[i])] for i in range(V_preds.shape[0])])
+        return np.mean(cross_entr)
+
+
+    def C_mse(V):
+        V_preds = np.array([np.diag(partial_trace(V @ i, [0, 1, 2, 3])) for i in tqdm(kets, leave=False)])
+#        for i in range(10):
+#            print(np.sum(U_preds[i]))
+#        print("")
+#        breakpoint()
+        mse = np.mean(np.power(V_preds - one_hot_labels_exp, 2))
+        return mse
+#        return np.mean(
+#            [
+#                np.linalg.norm(
+#                    np.diag(partial_trace(V @ ket, [0, 1, 2, 3]))
+#                    - one_hot_labels[label]
+#                )
+#                ** 2
+#                for ket, label in zip(kets, y_train)
+#            ]
+#        )
+
+    C = C_cross
 
     """
     Compute initial accuracies/cost function
     """
     V_old = initial_V
+    print("Evaluating initial accuracies...")
     accuracies = [
         evaluate_stacking_unitary(V_old, dataset=dataset, verbose=verbose)
     ]
+    print("Calculating initial cost...")
     C_old = C(V_old)
     Cs = [C_old]
 
@@ -504,6 +527,7 @@ def stochastic_update(initial_V, n_steps, experiment_name, dataset="mnist", verb
     # c_lls = [c_ll_old]
     # c_ql_old = sum_c_ql(V_old)
     # c_qls = [c_ql_old]
+    print("Running updates...")
     for i in tqdm(range(n_steps)):
 
         # Random Matrix
@@ -640,7 +664,7 @@ if __name__ == "__main__":
 
     n_copies = 1
     dataset = "mnist"
-    experiment_name = "new_cost_func_mean"
+    experiment_name = "new_cost_func_outer"
     # plot_update(experiment_name, dataset)
 
 #    initial_V = initialise_V(n_copies, dataset)
