@@ -8,7 +8,6 @@ from tqdm import tqdm
 from svd_robust import svd
 from scipy.linalg import polar
 
-
 pi = np.pi
 cos = np.cos
 sin = np.sin
@@ -53,8 +52,8 @@ def create_sphere(r=1):
     z = r*cos(phi)
     return x,y,z
 
-def create_dataset(seed=2, sigma = 0.4):
-    X, Y = make_blobs(100, n_features=2, centers=2, cluster_std=sigma, random_state=2)
+def create_dataset(seed=2, sigma = 0.5):
+    X, Y = make_blobs(1000, n_features=2, centers=2, cluster_std=sigma, random_state=2)
     theta = X[:, 0]
     phi = X[:, 1]
     return (theta,phi), Y
@@ -67,6 +66,7 @@ def create_states():
 """
 Plotting funcs
 """
+
 def plot():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -74,8 +74,10 @@ def plot():
     x,y,z = create_sphere()
     theta_phi, yy = create_dataset()
 
-    ax.plot_surface(
-        x, y, z,  rstride=1, cstride=1, cmap=plt.cm.YlGnBu_r, alpha=0.8, linewidth=0)
+    #ax.plot_surface(
+    #    x, y, z,  rstride=1, cstride=1, cmap=plt.cm.YlGnBu_r, alpha=0.8, linewidth=0)
+    ax.plot_wireframe(
+        x, y, z,  rstride=1, cstride=1, cmap=plt.cm.YlGnBu_r, alpha=0.8, linewidth=0.5)
 
     ax.scatter(*spherical_coords(theta_phi), marker="o", s=25, edgecolor="k",c=yy)
 
@@ -216,19 +218,69 @@ def evaluate_stacking_unitary(U, verbose=1):
     preds_U = np.array([np.diag(partial_trace(i, [0])) for i in verb(preds_U)])
 
     training_predictions = evaluate_classifier_top_k_accuracy(preds_U, y_train, 1)
-    print()
     print('Training accuracy before:', evaluate_classifier_top_k_accuracy(initial_label_qubits, y_train, 1))
     print('Training accuracy U:', training_predictions)
+    print()
 
 """
 SVM classification
 """
 
+def svms():
+    from sklearn.svm import SVC, LinearSVC
+    from sklearn.metrics import classification_report
+
+    x, y = create_states()
+    x = abs(x)
+    print('Initial training accuracy: ', evaluate_classifier_top_k_accuracy(x,y,1))
+    print()
+
+    linear_classifier = SVC(kernel = 'linear', verbose = 0)
+    linear_classifier.fit(x,y)
+    linear_preds = linear_classifier.predict(x)
+    print('Linear svm accuracy: ', classification_report(linear_preds, y, output_dict = True)['accuracy'])
+
+    another_linear_classifier = LinearSVC(max_iter=10000)
+    another_linear_classifier.fit(x,y)
+    another_linear_preds = another_linear_classifier.predict(x)
+    print('Another linear svm accuracy: ', classification_report(another_linear_preds, y, output_dict = True)['accuracy'])
+    print()
+
+    train_results = []
+    for i in ['scale', 'auto']:
+        gaussian_linear_classifier = SVC(kernel = 'rbf', gamma = i, verbose = 0)
+        gaussian_linear_classifier.fit(x,y)
+        gaussian_linear_preds = gaussian_linear_classifier.predict(x)
+        train_results.append(classification_report(gaussian_linear_preds, y, output_dict = True)['accuracy'])
+    print('Gaussian svm accuracy: ', max(train_results))
+    print()
+
+    train_results = []
+    for j in range(1,5):
+        poly_linear_classifier = SVC(kernel = 'poly', degree = j, gamma = 'scale', verbose = 0)
+        poly_linear_classifier.fit(x,y)
+        poly_linear_preds = poly_linear_classifier.predict(x)
+        print(f'Poly-{j} svm accuracy: ', classification_report(poly_linear_preds, y, output_dict = True)['accuracy'])
+    print()
+
+    train_results = []
+    for i in ['scale', 'auto']:
+        sigmoid_linear_classifier = SVC(kernel = 'sigmoid', gamma = i, verbose = 0)
+        sigmoid_linear_classifier.fit(x,y)
+        sigmoid_linear_preds = sigmoid_linear_classifier.predict(x)
+        print('Sigmoid svm accuracy: ', classification_report(sigmoid_linear_preds, y, output_dict = True)['accuracy'])
+    print()
+
+    assert()
+
+
+
 if __name__ == '__main__':
     #plot()
+    #svms()
     n_copies = 1
 
-    for n_copies in range(10):
-
-        U = initialise_V(n_copies, verbose = 0)
+    for n in range(5):
+        print(f"n_copies = {n_copies}")
+        U = initialise_V(n, verbose = 0)
         evaluate_stacking_unitary(U, verbose = 0)
