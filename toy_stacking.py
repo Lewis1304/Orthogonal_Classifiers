@@ -17,9 +17,9 @@ exp = np.exp
 Tools
 """
 def spherical_coords(theta_phi):
-    r = 1.01 #Having r = r + \epsilon allows plotting to look better
+    r = 1.0 #Having r = r + \epsilon allows plotting to look better
     theta, phi = theta_phi[0], theta_phi[1]
-    return (r*sin(theta)*cos(phi),r*sin(theta)*sin(phi),r*cos(theta))
+    return np.array([r*sin(theta)*cos(phi),r*sin(theta)*sin(phi),r*cos(theta)]).T
 
 def partial_trace(rho, qubit_2_keep):
     """ Calculate the partial trace for qubit system
@@ -45,18 +45,30 @@ def partial_trace(rho, qubit_2_keep):
 Create funcs
 """
 
-def create_sphere(r=1):
+def create_sphere(r=0.96):
+    #Having r < 1 allows plotting to look nicer
     phi, theta = np.mgrid[0.0:pi:100j, 0.0:2.0*pi:100j]
     x = r*sin(phi)*cos(theta)
     y = r*sin(phi)*sin(theta)
     z = r*cos(phi)
     return x,y,z
 
-def create_dataset(seed=2, sigma = 0.5):
-    X, Y = make_blobs(1000, n_features=2, centers=2, cluster_std=sigma, random_state=2)
-    theta = X[:, 0]
-    phi = X[:, 1]
-    return (theta,phi), Y
+def create_dataset(n_train = 500, sigma = 0.6, seed=42):
+    #sigma=0.6   looks good
+    np.random.seed(seed)
+    sigma_0 = np.diag([sigma,sigma])
+    sigma_1 = np.diag([sigma,sigma])
+
+    #p(theta,phi) with theta,phi in radians
+    #dist_1 = np.random.multivariate_normal([pi/4,-pi/2],sigma_0,n_train//2)
+    dist_1 = np.random.multivariate_normal([0,0],sigma_0,n_train//2)
+    #dist_2 = np.random.multivariate_normal([pi/2,-pi/4],sigma_1,n_train//2)
+    dist_2 = np.random.multivariate_normal([pi,pi],sigma_1,n_train//2)
+
+    #plt.scatter(*dist_1.T)
+    #plt.scatter(*dist_2.T)
+    #plt.show()
+    return np.array(list(dist_1) + list(dist_2)).T, np.array([0]*len(dist_1) + [1]*len(dist_2))
 
 def create_states():
     theta_phi , Y = create_dataset()
@@ -79,7 +91,7 @@ def plot():
     ax.plot_wireframe(
         x, y, z,  rstride=1, cstride=1, cmap=plt.cm.YlGnBu_r, alpha=0.8, linewidth=0.5)
 
-    ax.scatter(*spherical_coords(theta_phi), marker="o", s=25, edgecolor="k",c=yy)
+    ax.scatter(*spherical_coords(theta_phi).T, marker="o", s=25, edgecolor="k",c=yy)
 
     ax.set_xlim([-1,1])
     ax.set_ylim([-1,1])
@@ -131,7 +143,7 @@ def initialise_V(n_copies, verbose=1):
             ket = i
             for k in range(n_copies):
                 ket = np.kron(ket, i)
-            outer = np.outer(ket.conj(), ket)
+            outer = np.outer(ket, ket.conj())
 
             # Add copy matrices (of same class) together
             weighted_outer_states += outer
@@ -230,9 +242,13 @@ def svms():
     from sklearn.svm import SVC, LinearSVC
     from sklearn.metrics import classification_report
 
-    x, y = create_states()
-    x = abs(x)
-    print('Initial training accuracy: ', evaluate_classifier_top_k_accuracy(x,y,1))
+    theta_phi, y = create_dataset()
+    #SVM cannot handle complex numbers
+    #Convert to spherical coords instead
+    x = spherical_coords(theta_phi)
+
+    x_initial, y_initial = create_states()
+    print('Initial training accuracy: ', evaluate_classifier_top_k_accuracy(x_initial,y_initial,1))
     print()
 
     linear_classifier = SVC(kernel = 'linear', verbose = 0)
@@ -246,41 +262,45 @@ def svms():
     print('Another linear svm accuracy: ', classification_report(another_linear_preds, y, output_dict = True)['accuracy'])
     print()
 
-    train_results = []
     for i in ['scale', 'auto']:
         gaussian_linear_classifier = SVC(kernel = 'rbf', gamma = i, verbose = 0)
         gaussian_linear_classifier.fit(x,y)
         gaussian_linear_preds = gaussian_linear_classifier.predict(x)
-        train_results.append(classification_report(gaussian_linear_preds, y, output_dict = True)['accuracy'])
-    print('Gaussian svm accuracy: ', max(train_results))
+        print(f'Gaussian svm {i} accuracy: ', classification_report(gaussian_linear_preds, y, output_dict = True)['accuracy'])
     print()
 
-    train_results = []
     for j in range(1,5):
         poly_linear_classifier = SVC(kernel = 'poly', degree = j, gamma = 'scale', verbose = 0)
         poly_linear_classifier.fit(x,y)
         poly_linear_preds = poly_linear_classifier.predict(x)
-        print(f'Poly-{j} svm accuracy: ', classification_report(poly_linear_preds, y, output_dict = True)['accuracy'])
+        print(f'Poly-{j} svm scale accuracy: ', classification_report(poly_linear_preds, y, output_dict = True)['accuracy'])
     print()
 
-    train_results = []
+    for j in range(1,5):
+        poly_linear_classifier = SVC(kernel = 'poly', degree = j, gamma = 'auto', verbose = 0)
+        poly_linear_classifier.fit(x,y)
+        poly_linear_preds = poly_linear_classifier.predict(x)
+        print(f'Poly-{j} svm auto accuracy: ', classification_report(poly_linear_preds, y, output_dict = True)['accuracy'])
+    print()
+
     for i in ['scale', 'auto']:
         sigmoid_linear_classifier = SVC(kernel = 'sigmoid', gamma = i, verbose = 0)
         sigmoid_linear_classifier.fit(x,y)
         sigmoid_linear_preds = sigmoid_linear_classifier.predict(x)
-        print('Sigmoid svm accuracy: ', classification_report(sigmoid_linear_preds, y, output_dict = True)['accuracy'])
+        print(f'Sigmoid svm {i} accuracy: ', classification_report(sigmoid_linear_preds, y, output_dict = True)['accuracy'])
     print()
-
-    assert()
+    print('######################################')
+    print()
+    #assert()
 
 
 
 if __name__ == '__main__':
     #plot()
-    #svms()
-    n_copies = 1
+    svms()
+    #n_copies = 1
 
-    for n in range(5):
-        print(f"n_copies = {n_copies}")
+    for n in range(10):
+        print(f"n_copies = {n}")
         U = initialise_V(n, verbose = 0)
         evaluate_stacking_unitary(U, verbose = 0)
