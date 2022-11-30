@@ -5,7 +5,7 @@ import qutip
 from sklearn.datasets import make_blobs
 from matplotlib import cm, colors
 from tqdm import tqdm
-from svd_robust import svd
+from scipy.linalg import svd
 from scipy.linalg import polar
 
 pi = np.pi
@@ -53,6 +53,17 @@ def create_sphere(r=0.96):
     z = r*cos(phi)
     return x,y,z
 
+def polar_to_vector(theta, phi, r=1):
+    return np.array([r*sin(theta)*cos(phi),r*sin(theta)*sin(phi),r*cos(theta)]).T
+
+def vector_to_polar(vect):
+    r = np.linalg.norm(vect)
+    theta = np.arctan(vect[1] / vect[0])
+    phi = np.arccos(vect[2] / r)
+
+    return np.array([theta, phi])
+
+
 def create_dataset(n_total = 1000, n_test = 0.2, sigma = 0.2, seed=42):
     """
     sigma=0.5 looks good
@@ -60,6 +71,9 @@ def create_dataset(n_total = 1000, n_test = 0.2, sigma = 0.2, seed=42):
     np.random.seed(seed)
     sigma_0 = np.diag([sigma,pi*sigma])
     sigma_1 = np.diag([pi*sigma,sigma])
+
+    sigma_0 = np.diag([sigma/4,pi*sigma])
+    sigma_1 = np.diag([sigma,sigma/4])
 
     """
     p(theta,phi) with theta,phi in radians
@@ -111,7 +125,7 @@ def plot_sphere():
     ax.set_zlim([-1,1])
     ax.set_box_aspect([1,1,1])
     plt.tight_layout()
-    plt.savefig('toy_stacking_results/sphere_n_total_500_n_test_02_sigma_06_seed_42.pdf')
+    #plt.savefig('toy_stacking_results/sphere_n_total_500_n_test_02_sigma_06_seed_42.pdf')
     plt.show()
     assert()
 
@@ -386,6 +400,85 @@ def svms():
 if __name__ == '__main__':
     #plot_sphere()
     #plot_results()
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    x,y,z = create_sphere()
+    ax.plot_wireframe(
+        x, y, z,  rstride=1, cstride=1, cmap=plt.cm.YlGnBu_r, alpha=0.8, linewidth=0.5)
+
+    n_points = 100
+    original = np.array([0, 0, 1])
+    original = original / np.linalg.norm(original)
+    sigma = [0.05, 0.05, 0.05]
+    points = np.random.multivariate_normal([0, 0, 0], np.diag(sigma), n_points)
+    points = original + points
+
+#    original2 = np.array([1, 0, 0])
+#    original2 = original2 / np.linalg.norm(original2)
+#    sigma = [0.05, 0.05, 0.05]
+#    points2 = np.random.multivariate_normal([0, 0, 0], np.diag(sigma), n_points)
+#    points2 = original2 + points2
+
+    original2 = np.array([1, 0, 0])
+    orig_angle = vector_to_polar(original2)
+    orig_angle = np.array([0.0, np.pi/2])
+    delt_angles = np.random.multivariate_normal([0, 0], np.diag(sigma[:2]), n_points)
+
+    angles = orig_angle + delt_angles
+    print(angles[:10])
+
+#    mask = angles[:, 1] < 0.0
+#    if angles[mask, :].shape[0] > 0:
+#        print("Fixing phi leq 0")
+#        angles[mask, :][1] =  2*np.pi - angles[mask, :][1]
+#        angles[mask, :][0] =  angles[mask, :][0] + np.pi
+#
+#    mask = angles[:, 1] > np.pi
+#    if angles[mask, :].shape[0] > 0:
+#        print("Fixing phi > np.pi")
+#        angles[mask, :][1] =  -1.*angles[mask, :][1]
+#        angles[mask, :][0] =  angles[mask, :][0] + np.pi
+#
+#    mask = angles[:, 0] < 0.0
+#    if angles[mask, :].shape[0] > 0:
+#        print("Fixing theta < 0")
+#        angles[mask, :][0] =  angles[mask, :][0] + 2*np.pi
+#
+#    mask = angles[:, 0] > 2*np.pi
+#    if angles[mask, :].shape[0] > 0:
+#        print("Fixing theta > 2*np.pi")
+#        angles[mask, :][0] =  angles[mask, :][0] - 2*np.pi
+
+    points2 = np.zeros((n_points, 3))
+    points2[:, 0] = np.sin(angles[:, 1]) * np.cos(angles[:, 0])
+    points2[:, 1] = np.sin(angles[:, 0]) * np.sin(angles[:, 1])
+    points2[:, 2] = np.cos(angles[:, 0])
+
+    axes = [[0, 0, 1], [0, 1, 0], [1, 0, 0]]
+    ax.scatter(*axes, marker='^', c='black', s=25)
+
+
+#    ax.scatter(*points.T, marker='x', s=25, edgecolor='k', c=np.ones(points.shape[0]))
+    ax.scatter(*original, marker='x', s=25, edgecolor='k', c='red')
+    ax.scatter(*original2, marker='x', s=25, edgecolor='k', c='blue')
+    c2 = np.ones(points.shape[0])*2
+    points = (points.T / np.linalg.norm(points, axis=1)).T
+    ax.scatter(*points.T, marker='o', s=25, edgecolor='k', c='red', alpha=0.5)
+    c4 = np.ones(points.shape[0])*4
+    points2 = (points2.T / np.linalg.norm(points2, axis=1)).T
+    ax.scatter(*points2.T, marker='o', s=25, edgecolor='k', c='blue', alpha=0.5)
+    ax.set_xlim([-1, 1])
+    ax.set_ylim([-1, 1])
+    ax.set_zlim([-1, 1])
+    ax.set_box_aspect([1, 1, 1])
+    plt.tight_layout()
+    plt.show()
+
+    plt.plot(*delt_angles, marker='x')
+    print(delt_angles.shape)
+    plt.show()
+    assert()
 
     svms()
     training_acc = []
@@ -398,5 +491,5 @@ if __name__ == '__main__':
         training_acc.append(train_result)
         test_acc.append(test_result)
 
-    #np.save('toy_stacking_results/training_accuracy_n_total_1000_n_test_02_sigma_06_seed_42_mu_00_pi20', training_acc)
-    #np.save('toy_stacking_results/test_accuracy_n_total_1000_n_test_02_sigma_06_seed_42_mu_00_pi20', test_acc)
+    np.save('toy_stacking_results/training_accuracy_n_total_1000_n_test_02_sigma_06_seed_42_mu_00_pi20', training_acc)
+    np.save('toy_stacking_results/test_accuracy_n_total_1000_n_test_02_sigma_06_seed_42_mu_00_pi20', test_acc)
