@@ -37,7 +37,7 @@ def get_Data(Theta, phi, chi, dx, dy, angles=False, coords=False):
     N = 1000
     X = np.random.normal(0.0,dx,N)
     Y = np.random.normal(0.0,dy,N)
-    Thet = 2*np.arctan2((np.sqrt(X*X+Y*Y)), 1)
+    Thet = 2*np.arctan2(2, (np.sqrt(X*X+Y*Y)))
     Ph = np.arctan2(Y, X)+chi
     Z = zeros((N,2),dtype=complex)
     m = 1
@@ -88,7 +88,7 @@ def get_Classify1(U,D1,D2):
     return Cost,Accuracy
 
 
-def get_ImproveU1(U,D1,D2):
+def get_ImproveU1(U,D1,D2, alpha=0.5):
     """ This attempts to improve the stacking using polar decomp"""
     """ for a single copy nothing changes """
     from copy import copy
@@ -110,15 +110,20 @@ def get_ImproveU1(U,D1,D2):
     dist = U - _U
     dist_sq = dist @ dist.conj().T
     print('Orig dist from original U: {}'.format(np.trace(dist_sq)))
-    while m < 4:
+    while m < 15:
         # Taking the trace is equivalent to summing over the images
-        dz1 = ncon([np.conj(D1),Z,U,D1]\
-        ,([5,-2],[3,-1],[3,4],[5,4]))
+#        dz1 = ncon([np.conj(D1),Z,U,D1]\
+#        ,([5,-2],[3,-1],[3,4],[5,4]))
 
-        dz2 = ncon([np.conj(D2),Z,U,D2]\
-        ,([5,-2],[3,-1],[3,4],[5,4]))
+        mydz1 = ncon([Z, U, D1, np.conj(D1)], ((-1, 1), (1, 2), (3, 2), (3, -2)))
 
-        U = get_Polar(dz1-dz2)
+#        dz2 = ncon([np.conj(D2),Z,U,D2]\
+#        ,([5,-2],[3,-1],[3,4],[5,4]))
+
+        mydz2 = ncon([Z, U, D2, np.conj(D2)], ((-1, 1), (1, 2), (3, 2), (3, -2)))
+
+        U = get_Polar(U + alpha*(mydz1-mydz2))
+#        U = get_Polar(dz1 - dz2)
 
         dist = U - _U
         dist_sq = dist @ dist.conj().T
@@ -129,14 +134,14 @@ def get_ImproveU1(U,D1,D2):
         DU1 = applyU1(D1, U)
         DU2 = applyU1(D2, U)
 
-        ax = plotBlochSphere(DU1, spinToBloch=True)
-        ax = plotBlochSphere(DU2, spinToBloch=True, ax=ax, c='r',
-                title='Improved m={}'.format(m))
-        print("    {}: {}".format(m, get_Classify1(U,D1,D2)))
+#        ax = plotBlochSphere(DU1, spinToBloch=True)
+#        ax = plotBlochSphere(DU2, spinToBloch=True, ax=ax, c='r',
+#                title='Improved m={}'.format(m))
+        cost, acc = get_Classify1(U, D1, D2)
+        print("    m = {}: Cost = {}, Acc = {}".format(m, cost, acc))
         print()
     print(get_Classify1(U,D1,D2))
-    plt.show()
-    assert()
+#    plt.show()
     return U
 
 def applyU1(D1, U):
@@ -196,8 +201,10 @@ def get_Z2(U,D1,D2):
         FF1[l-1,:] = ncon([tempF1,tempF1],([-1],[-2])).reshape([2*2])
         FF2[l-1,:] = ncon([tempF2,tempF2],([-1],[-2])).reshape([2*2])
         l +=1
-    """print(get_Classify2(Z2,FF1,FF2))"""
     """ construct circuits for derivative of cost function and polarise"""
+    print('Pre optimisation accuracy + cost:')
+    print(get_Classify2(Z2,FF1,FF2))
+    print("Attempting optimisation")
     m=1
     while m < 6:
         dz1 = ncon([np.conj(FF1),(ZI+II),Z2,FF1]\
@@ -205,7 +212,8 @@ def get_Z2(U,D1,D2):
         dz2 = ncon([np.conj(FF2),(ZI-II),Z2,FF2]\
         ,([5,-2],[-1,3],[3,4],[5,4]))
         Z2 = get_Polar(dz1-dz2)
-        """print(get_Classify2(Z2,FF1,FF2))"""
+        cost, acc = get_Classify2(Z2, FF1, FF2)
+        print("   m: {}  |  Cost : {}  |  Acc : {}".format(m, cost, acc))
         m +=1
     print(get_Classify2(Z2,FF1,FF2))
     return Z2
@@ -430,29 +438,27 @@ def spherical_coords(theta_phi):
 
 
 if __name__ == "__main__":
+    from scipy.stats import unitary_group
     #np.random.seed(1)
     N = 1000
+    # Stereographic data generation - TO FIX
     Theta1 = 0.0
     phi1 = 0.1
-    chi1 = 0.0
-    dx1 = 0.2
-    dy1 = 0.2
+#    chi1 = 0.0
+#    dx1 = 0.1
+#    dy1 = 0.1
     Theta2 = 1.0
     phi2 = 0.9
-    chi2 = 1.0
-    dx2 = 0.3
-    dy2 = 0.1
-
-#    _, D1 = get_Data(Theta1,phi1,chi1,dx1,dy1, coords=True)
-    _, D2 = get_Data(Theta2,phi2,chi2,dx2,dy2, coords=True)
+#    chi2 = 1.0
+#    dx2 = 0.3
+#    dy2 = 0.1
 #
-#    print(D1.shape)
-#    print(D2.shape)
+#    _, D1 = get_Data(Theta1,phi1,chi1,dx1,dy1, coords=True)
+#    _, D2 = get_Data(Theta2,phi2,chi2,dx2,dy2, coords=True)
 #
 #    ax = plotBlochSphere(D1, spinToBloch=False)
-    ax = None
-    ax = plotBlochSphere(D2, spinToBloch=False, show=False, ax=ax, c='r',
-            title='Stereographic distribution')
+#    ax = plotBlochSphere(D2, spinToBloch=False, show=False, ax=ax, c='r',
+#            title='Stereographic distribution')
 #
     μ1 = spherical_coords([Theta1, phi1])
     k1 = 10
@@ -471,20 +477,16 @@ if __name__ == "__main__":
     ax = plotBlochSphere(D2, spinToBloch=True, show=False, ax=ax, c='r',
             title='v2nMises distribution to spin')
 
-    plt.show()
-    assert()
-
-    # Use the stereographic data generation
-    #D1 = get_Data(Theta1,phi1,chi1,dx1,dy1, coords=False)
-    #D2 = get_Data(Theta2,phi2,chi2,dx2,dy2, coords=False)
     U = get_Features(D1,D2)
+#    U = unitary_group.rvs(U.shape[0])
     C = get_Classify1(U,D1,D2)
     print(C)
-    print("Improved U, 1 copy")
-    Uimproved = get_ImproveU1(U,D1,D2)
-    C = get_Classify1(Uimproved,D1,D2)
+#    print("Improved U, 1 copy")
+#    Uimproved = get_ImproveU1(U,D1,D2)
+#    C = get_Classify1(Uimproved,D1,D2)
     print("Improved 2 copies")
     Z2 = get_Z2(U,D1,D2)
+    assert()
     print("Improved 3 copies")
     Z3 = get_Z3(U,Z2,D1,D2)
     print("Improved 4 copies")
