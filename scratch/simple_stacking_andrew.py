@@ -2,6 +2,8 @@ from ncon import ncon
 import numpy as np
 from numpy import eye, zeros
 import matplotlib.pyplot as plt
+from sample_data import vonMisesFisherSphere, plotPointsSphere
+from scipy.linalg import polar
 
 def init_V(D):
     """ Returns a random unitary """
@@ -20,10 +22,14 @@ def get_s(d):
 def get_Polar(M):
     """ Return the polar decomposition of M """
     x,y,z =  np.linalg.svd(M)
+    print("    S: {}".format(y))
+#    print("    U: {}".format(x))
+#    print("    V: {}".format(z))
     M = ncon([x,z],([-1,1],[1,-2]))
+
     return M
 
-def get_Data(Theta, phi, chi, dx, dy, angles=False):
+def get_Data(Theta, phi, chi, dx, dy, angles=False, coords=False):
     """ Returns a set of spinors on the block shere """
     """ i. centred at theta,phi """
     """ ii. from sterographic projection of gaussian variance dx,dy"""
@@ -31,8 +37,8 @@ def get_Data(Theta, phi, chi, dx, dy, angles=False):
     N = 1000
     X = np.random.normal(0.0,dx,N)
     Y = np.random.normal(0.0,dy,N)
-    Thet = 2*np.arctan(1/(np.sqrt(X*X+Y*Y)))
-    Ph = np.arctan(Y/X)+chi
+    Thet = 2*np.arctan2((np.sqrt(X*X+Y*Y)), 1)
+    Ph = np.arctan2(Y, X)+chi
     Z = zeros((N,2),dtype=complex)
     m = 1
     while m < N+1:
@@ -44,6 +50,12 @@ def get_Data(Theta, phi, chi, dx, dy, angles=False):
         Angles[:, 0] = Thet
         Angles[:, 1] = Ph
         return Z, Angles
+    if coords:
+        Coords = zeros((N, 3))
+        Coords[:, 0] = np.sin(Thet)*np.cos(Ph)
+        Coords[:, 1] = np.sin(Thet)*np.sin(Ph)
+        Coords[:, 2] = np.cos(Thet)
+        return Z, Coords
     return Z
 
 def get_Classify1(U,D1,D2):
@@ -79,20 +91,58 @@ def get_Classify1(U,D1,D2):
 def get_ImproveU1(U,D1,D2):
     """ This attempts to improve the stacking using polar decomp"""
     """ for a single copy nothing changes """
+    from copy import copy
     N = 1000
+
     Z = eye(2)
     Z[1,1] = - Z[1,1]
     m = 1
-    while m < 6:
+    DU1 = applyU1(D1, U)
+    DU2 = applyU1(D2, U)
+    ax = plotBlochSphere(DU1, spinToBloch=True)
+    ax = plotBlochSphere(DU2, spinToBloch=True, ax=ax, c='r',
+            title='Not Improved m={}'.format(m))
+    print("    {}".format(get_Classify1(U,D1,D2)))
+
+    print(D1.shape)
+    print('Trying to improve...')
+    _U = copy(U)
+    dist = U - _U
+    dist_sq = dist @ dist.conj().T
+    print('Orig dist from original U: {}'.format(np.trace(dist_sq)))
+    while m < 4:
+        # Taking the trace is equivalent to summing over the images
         dz1 = ncon([np.conj(D1),Z,U,D1]\
         ,([5,-2],[3,-1],[3,4],[5,4]))
+
         dz2 = ncon([np.conj(D2),Z,U,D2]\
         ,([5,-2],[3,-1],[3,4],[5,4]))
+
         U = get_Polar(dz1-dz2)
-        """print(get_Classify1(U,D1,D2))"""
+
+        dist = U - _U
+        dist_sq = dist @ dist.conj().T
+        print('    Trace dist from original U: {}'.format(np.trace(dist_sq)))
+
         m +=1
+
+        DU1 = applyU1(D1, U)
+        DU2 = applyU1(D2, U)
+
+        ax = plotBlochSphere(DU1, spinToBloch=True)
+        ax = plotBlochSphere(DU2, spinToBloch=True, ax=ax, c='r',
+                title='Improved m={}'.format(m))
+        print("    {}: {}".format(m, get_Classify1(U,D1,D2)))
+        print()
     print(get_Classify1(U,D1,D2))
+    plt.show()
+    assert()
     return U
+
+def applyU1(D1, U):
+    states = [ncon([U, d1], ((-1, 1), (1,))) for d1 in D1]
+    states = np.array(states)
+    return states
 
 def get_Classify2(Z2,FF1,FF2):
     N = 1000
@@ -306,21 +356,18 @@ def get_Features(D1,D2):
     U = get_Polar(U)
     return U
 
-def plotBlochSphere(states, show=False, ax=None, c='b', title=None):
+def plotBlochSphere(states, show=False, ax=None, c='b', title=None,
+        spinToBloch=False):
     '''
     Take in state data and ploit on the block sphere
     '''
 
-    blochCoords = [spin_to_bloch(s) for s in states]
-    blochCoords = np.array(blochCoords)
-    xs = blochCoords[:, 0]
-    ys = blochCoords[:, 1]
-    zs = blochCoords[:, 2]
-
-    for i in range(10):
-        print(f"({xs[i]}, {ys[i]}, {zs[i]})")
-        norm = np.linalg.norm([xs[i], ys[i], zs[i]])
-        print(f"{norm}")
+    if spinToBloch:
+        states = [spin_to_bloch(s) for s in states]
+        states = np.array(states)
+    xs = states[:, 0]
+    ys = states[:, 1]
+    zs = states[:, 2]
 
     if ax is None:
         fig = plt.figure()
@@ -361,6 +408,21 @@ def spin_to_bloch(state):
 
     return [x, y, z]
 
+def bloch_to_spin(state):
+    r = np.linalg.norm(state)
+    phi = np.arctan2(state[1] , state[0])
+    theta = np.arccos(state[2] / r)
+
+    if phi < 0.0:
+        phi = 2*np.pi + phi
+
+    Z = np.zeros(2, complex)
+    Z[0] = np.cos(theta/2.)
+    Z[1] = np.sin(theta/2.) * np.exp(1j*phi)
+
+    return Z
+
+
 def spherical_coords(theta_phi):
     r = 1.0
     theta, phi = theta_phi[0], theta_phi[1]
@@ -373,25 +435,59 @@ if __name__ == "__main__":
     Theta1 = 0.0
     phi1 = 0.1
     chi1 = 0.0
-    dx1 = 1.5
+    dx1 = 0.2
     dy1 = 0.2
-    Theta2 = 2.1
+    Theta2 = 1.0
     phi2 = 0.9
     chi2 = 1.0
-    dx2 = 0.75
-    dy2 = 0.3
+    dx2 = 0.3
+    dy2 = 0.1
 
-    D1 = get_Data(Theta1,phi1,chi1,dx1,dy1)
-    D2 = get_Data(Theta2,phi2,chi2,dx2,dy2)
+#    _, D1 = get_Data(Theta1,phi1,chi1,dx1,dy1, coords=True)
+    _, D2 = get_Data(Theta2,phi2,chi2,dx2,dy2, coords=True)
+#
+#    print(D1.shape)
+#    print(D2.shape)
+#
+#    ax = plotBlochSphere(D1, spinToBloch=False)
+    ax = None
+    ax = plotBlochSphere(D2, spinToBloch=False, show=False, ax=ax, c='r',
+            title='Stereographic distribution')
+#
+    μ1 = spherical_coords([Theta1, phi1])
+    k1 = 10
+    μ2 = spherical_coords([Theta2, phi2])
+    k2 = 40
+    D1 = vonMisesFisherSphere(μ1, k1, N)
+    D2 = vonMisesFisherSphere(μ2, k2, N)
 
-    ax = plotBlochSphere(D1)
-    ax = plotBlochSphere(D2, show=True, ax=ax, c='r', title='Data distribution')
+#    ax = plotBlochSphere(D1, spinToBloch=False)
+#    ax = plotBlochSphere(D2, spinToBloch=False, show=False, ax=ax, c='r',
+#            title='vonMises distribution')
+    D1 = np.array([bloch_to_spin(d) for d in D1])
+    D2 = np.array([bloch_to_spin(d) for d in D2])
+
+    ax = plotBlochSphere(D1, spinToBloch=True)
+    ax = plotBlochSphere(D2, spinToBloch=True, show=False, ax=ax, c='r',
+            title='v2nMises distribution to spin')
+
+    plt.show()
     assert()
+
+    # Use the stereographic data generation
+    #D1 = get_Data(Theta1,phi1,chi1,dx1,dy1, coords=False)
+    #D2 = get_Data(Theta2,phi2,chi2,dx2,dy2, coords=False)
     U = get_Features(D1,D2)
     C = get_Classify1(U,D1,D2)
     print(C)
+    print("Improved U, 1 copy")
     Uimproved = get_ImproveU1(U,D1,D2)
     C = get_Classify1(Uimproved,D1,D2)
+    print("Improved 2 copies")
     Z2 = get_Z2(U,D1,D2)
+    print("Improved 3 copies")
     Z3 = get_Z3(U,Z2,D1,D2)
+    print("Improved 4 copies")
     Z4 = get_Z4(U,Z3,D1,D2)
+
+    plt.show()
