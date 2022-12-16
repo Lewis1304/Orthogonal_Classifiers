@@ -71,11 +71,13 @@ def vonMisesFisherSphere(μ, κ, N):
 def plotPointsSphere(points, show=False, ax=None, c='b', title=None,
         marker='o'):
     '''
-    Take in state data and ploit on the block sphere
+    Take in state data points and plot on the Bloch sphere
     '''
+    # Set up axes if not defined previously
     if ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
+        # Add wireframe sphere
         r=1
         phi, theta = np.mgrid[0.0:np.pi:100j, 0.0:2.0*np.pi:100j]
         x = r*np.sin(phi)*np.cos(theta)

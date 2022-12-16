@@ -482,7 +482,7 @@ def stochastic_update(initial_V, n_steps, experiment_name, dataset="mnist", verb
 #            print(np.sum(U_preds[i]))
 #        print("")
 #        breakpoint()
-        mse = np.mean(np.power(V_preds - one_hot_labels_exp, 2))
+        mse = np.mean(np.power(V_preds - one_hot_labels_exp, 4))
         return mse
 #        return np.mean(
 #            [
@@ -495,7 +495,7 @@ def stochastic_update(initial_V, n_steps, experiment_name, dataset="mnist", verb
 #            ]
 #        )
 
-    C = C_cross
+    C = C_mse
 
     """
     Compute initial accuracies/cost function

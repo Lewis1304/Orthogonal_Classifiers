@@ -367,9 +367,10 @@ def get_Features(D1,D2):
 def plotBlochSphere(states, show=False, ax=None, c='b', title=None,
         spinToBloch=False):
     '''
-    Take in state data and ploit on the block sphere
+    Take in state points and plot on the Bloch sphere
     '''
 
+    # Convert spin states to Cartesian data points.
     if spinToBloch:
         states = [spin_to_bloch(s) for s in states]
         states = np.array(states)
@@ -377,6 +378,7 @@ def plotBlochSphere(states, show=False, ax=None, c='b', title=None,
     ys = states[:, 1]
     zs = states[:, 2]
 
+    # Set up axes with wirefram sphere
     if ax is None:
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -397,13 +399,16 @@ def plotBlochSphere(states, show=False, ax=None, c='b', title=None,
     plt.tight_layout()
     if title is not None:
         ax.set_title(title)
-    #plt.savefig('toy_stacking_results/sphere_n_total_500_n_test_02_sigma_06_seed_42.pdf')
     if show:
         plt.show()
 
     return ax
 
 def spin_to_bloch(state):
+    '''
+    Convert a spin state `a|0> + b|1>` represented as a list `[a, b]` into
+    the Cartesian coordinates for the point on the Bloch sphere.
+    '''
     u = state[1] /(state[0] + 1e-12)
     ux = np.real(u)
     uy = np.imag(u)
