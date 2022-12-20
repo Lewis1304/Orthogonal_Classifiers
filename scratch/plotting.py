@@ -20,7 +20,7 @@ def spin_to_bloch(state):
     return [x, y, z]
 
 
-def plotBlochSphere(states, show=False, ax=None, c='b', title=None,
+def plotBlochSphere(states, show=False, ax=None, colour='b', title=None,
         spinToBloch=False):
     '''
     Take in state points and plot on the Bloch sphere
@@ -36,17 +36,9 @@ def plotBlochSphere(states, show=False, ax=None, c='b', title=None,
 
     # Set up axes with wirefram sphere
     if ax is None:
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-        r=1
-        phi, theta = np.mgrid[0.0:np.pi:100j, 0.0:2.0*np.pi:100j]
-        x = r*np.sin(phi)*np.cos(theta)
-        y = r*np.sin(phi)*np.sin(theta)
-        z = r*np.cos(phi)
-        ax.plot_wireframe(
-            x, y, z,  rstride=1, cstride=1, cmap=plt.cm.YlGnBu_r, alpha=0.8, linewidth=0.5)
+        ax = prepareBlochSphereAxes()
 
-    ax.scatter(xs, ys, zs, marker='o', s=25, edgecolor='k', c=c)
+    ax.scatter(xs, ys, zs, marker='o', s=25, edgecolor='k', c=colour)
 
     ax.set_xlim([-1,1])
     ax.set_ylim([-1,1])
@@ -60,14 +52,99 @@ def plotBlochSphere(states, show=False, ax=None, c='b', title=None,
 
     return ax
 
+def prepareBlochSphereAxes():
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    r=1
+    phi, theta = np.mgrid[0.0:np.pi:100j, 0.0:2.0*np.pi:100j]
+    x = r*np.sin(phi)*np.cos(theta)
+    y = r*np.sin(phi)*np.sin(theta)
+    z = r*np.cos(phi)
+    ax.plot_wireframe(
+        x, y, z,  rstride=1, cstride=1, cmap=plt.cm.YlGnBu_r, alpha=0.8, linewidth=0.5)
+    return ax
+
+
+def plotGreatCircle(p1, p2, ax=None, colour='k', alpha=0.5):
+    '''
+    Plot a great circle on a unit sphere given two points on the great circle
+    `p1` and `p2`.
+    '''
+    points = greatCirclePoints(p1, p2)
+    xs, ys, zs = points[:, 0], points[:, 1], points[:, 2]
+    if ax is None:
+        ax = prepareBlochSphereAxes()
+    ax.plot(xs, ys, zs=zs, c=colour, alpha=alpha)
+    return ax
+
+def plotVector(point, ax=None, origin=None, colour='k', alpha=1.0, normalise=False):
+    if ax is None:
+        ax = prepareBlochSphereAxes()
+    if origin is None:
+        origin = np.array([0., 0., 0.])
+
+    if normalise:
+        point = point / np.linalg.norm(point)
+    points = np.zeros((2, 3))
+    points[0, :] = origin
+    points[1, :] = point
+    xs, ys, zs = points[:, 0], points[:, 1], points[:, 2]
+    ax.plot(xs, ys, zs=zs, c=colour, alpha=alpha)
+    return ax
+
+
+def greatCirclePoints(p1, p2, N=100):
+    '''
+    From two arbitrary points `p1` and `p2`, compute N equidistant points on
+    a great circle of a unit sphere.
+    '''
+    p1 = p1 / np.linalg.norm(p1)
+    p2 = p2 / np.linalg.norm(p2)
+
+    # Compute two orthogonal vectors on great circle
+    u = p1
+    w = np.cross(p1, p2)
+    w = w / np.linalg.norm(w)
+    v = np.cross(u, w)
+
+    # Parameterise angles
+    N = 100
+    ω = np.linspace(0, 2*np.pi, N)
+    ω = np.repeat(ω, 3)
+    ω = ω.reshape(N, 3)
+
+    #Compute points of great circle
+    circle = u*np.cos(ω) + v*np.sin(ω)
+
+    return circle
+
 if __name__=="__main__":
     # Exampled plotting of N random states
     N = 100
-    states = np.random.randn(N, 2) + 1j*np.random.randn(N, 2)
+    states1 = np.random.randn(N, 2) + 1j*np.random.randn(N, 2)
     # Normalise the states
-    norms = np.linalg.norm(states, axis=1)
-    states = states / np.array([norms, norms]).T
+    norms = np.linalg.norm(states1, axis=1)
+    states1 = states1 / np.array([norms, norms]).T
 
-    # plot on Bloch sphere
-    plotBlochSphere(states, spinToBloch=True)
+
+    # Generate another set of random states
+    states2 = np.random.randn(N, 2) + 1j*np.random.randn(N, 2)
+    # Normalise the states
+    norms = np.linalg.norm(states2, axis=1)
+    states2 = states2 / np.array([norms, norms]).T
+
+    # plot states in different colours on Bloch sphere
+    ax = plotBlochSphere(states1, spinToBloch=True, colour='green')
+    ax = plotBlochSphere(states2, spinToBloch=True, colour='blue', ax=ax)
+
+    # Plot a random great circle
+    p1 = np.random.rand(3)
+    p2 = np.random.rand(3)
+
+    ax = plotGreatCircle(p1, p2, ax)
+
+    # Plot the great circle vectors
+    ax = plotVector(p1, normalise=True, ax=ax, colour='r')
+    ax = plotVector(p2, normalise=True, ax=ax, colour='r')
+
     plt.show()
